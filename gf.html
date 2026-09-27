@@ -22,28 +22,35 @@
 		.hint { color: #aaa; font-size: 0.9rem; text-align: left; }
 		.container {
 			display: flex;
-
 			background: #2a2a2a;
-
 			border-radius: 12px;
 			box-shadow: 0 8px 24px rgba(0,0,0,0.4);
 			width: 100%;
-
 			flex: 1 1 auto;
 			min-height: 0;
 		}
-		.controls{
+		.controls {
 			padding: 12px;
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+			width: 340px;
+			max-width: 100%;
+			flex: 0 0 auto;
+			overflow-y: auto;
 		}
 		.control-group {
 			display: flex;
 			flex-direction: column;
 			gap: 5px;
 		}
+		.control-group.row { flex-direction: row; align-items: center; gap: 10px; }
+		.control-group.row label { text-transform: none; font-size: 0.95rem; color: #e0e0e0; }
+		.control-group.row input[type="checkbox"] { width: auto; accent-color: #4af; }
 		label { font-weight: bold; font-size: 0.85rem; color: #4af; text-transform: uppercase; letter-spacing: 0.5px; }
 		input[type="range"] { width: 100%; accent-color: #4af; }
 		.val-display { font-size: 0.85rem; color: #ccc; text-align: right; margin-top: -2px; }
-		select, button {
+		select, button, input[type="text"] {
 			padding: 10px;
 			background: #3a3a3a;
 			color: #fff;
@@ -53,6 +60,8 @@
 			font-size: 0.95rem;
 			transition: background 0.2s;
 		}
+		select, input[type="text"] { width: 100%; }
+		input[type="text"] { cursor: text; }
 		select:hover, button:hover { background: #4a4a4a; border-color: #4af; }
 		button.generate-btn { background: #007acc; border: none; font-weight: bold; margin-top: auto; }
 		button.generate-btn:hover { background: #0098ff; }
@@ -79,9 +88,10 @@
 			aspect-ratio: 14 / 9;
 			margin: auto;
 		}
-		/* absolute: холст не влияет на размер обертки — нет цикла layout -> resize */
+		/* absolute: the canvas never drives the wrapper size — no layout -> resize loop */
 		canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
-		#mainCanvas { touch-action: pan-y; }
+		/* the canvas is a two-axis control (dX period / dY depth), so it must not pan the page */
+		#mainCanvas { touch-action: none; cursor: grab; }
 		#mainCanvas.over-dots { cursor: ew-resize; }
 		#mainCanvas.grabbing { cursor: grabbing; }
 		.guide-canvas { pointer-events: none; }
@@ -98,15 +108,15 @@
 		}
 		.lang-bar button { padding: 4px 12px; font-size: 0.8rem; border-radius: 4px; }
 		.lang-bar button.active { background: #4af; color: #000; font-weight: bold; border-color: #4af; }
-		/* узкий экран: одна колонка, изображение сверху, страница скроллится как обычно */
+		/* narrow screen: one column, image on top, the page scrolls normally */
 		@media (max-width: 1000px) {
 			:root { --canvas-max-h: 46vh; }
 			.container { flex-direction: column; flex: 0 0 auto; }
-			/* две колонки — панель вдвое ниже, страница реже скроллится */
-			.controls { flex: 0 0 auto; overflow: visible; display: grid; grid-template-columns: 1fr 1fr; align-content: start; }
+			/* two columns — the panel is half as tall, so the page scrolls less often */
+			.controls { width: auto; flex: 0 0 auto; overflow: visible; display: grid; grid-template-columns: 1fr 1fr; align-content: start; }
 			.controls .generate-btn { grid-column: 1 / -1; margin-top: 0; }
 			.view-panel { flex: 0 0 auto; order: -1; }
-			/* узкий экран: заголовок уходит под плавающую панель языков */
+			/* narrow screen: the title slides under the floating language bar */
 			body { height: auto; min-height: 100vh; padding-top: 52px; }
 			.title-row { padding-right: 0; }
 		}
@@ -123,6 +133,7 @@
 	<div class="title-row">
 		<h3 data-i18n="title">SIRDS Stereogram Generator</h3>
 		<div class="hint" data-i18n="hint">Look at the two gray dots below the image and look "through" the image to see the 3D picture.</div>
+		<div class="hint" data-i18n="hintDrag">Drag the image: left/right tunes the period, up/down tunes the depth. Drag the dots to set the period.</div>
 	</div>
 
 	<div class="container">
@@ -132,8 +143,16 @@
 				<select id="depthPreset">
 					<option value="shapes" data-i18n="optShapes">Geometric shapes (square and circle)</option>
 					<option value="torus" data-i18n="optTorus">3D ring (smooth gradient)</option>
+					<option value="heart" data-i18n="optHeart">Heart</option>
+					<option value="ripples" data-i18n="optRipples">Ripples (concentric waves)</option>
+					<option value="pyramid" data-i18n="optPyramid">Step pyramid</option>
 					<option value="text3d" data-i18n="optText3d">Text "3D LAB"</option>
 				</select>
+			</div>
+
+			<div class="control-group" id="depthTextRow">
+				<label for="depthText" data-i18n="lblCustomText">Custom text:</label>
+				<input type="text" id="depthText" maxlength="12" value="3D LAB" spellcheck="false">
 			</div>
 
 			<div class="control-group">
@@ -159,19 +178,35 @@
 			</div>
 
 			<div class="control-group">
+				<label for="depthContrast" data-i18n="lblContrast">Depth contrast:</label>
+				<input type="range" id="depthContrast" min="0.2" max="3" step="0.1" value="1">
+				<div class="val-display" id="depthContrastVal">1.0x</div>
+			</div>
+
+			<div class="control-group row">
+				<input type="checkbox" id="depthInvert">
+				<label for="depthInvert" data-i18n="lblInvert">Invert depth</label>
+			</div>
+
+			<div class="control-group row">
+				<input type="checkbox" id="hsrToggle" checked>
+				<label for="hsrToggle" data-i18n="lblHsr">Hide hidden surfaces</label>
+			</div>
+
+			<div class="control-group">
 				<label for="noiseScale" data-i18n="lblGrain">Noise grain size:</label>
 				<input type="range" id="noiseScale" min="1" max="16" value="2">
 				<div class="val-display" id="noiseScaleVal">2 px</div>
 			</div>
 
-			<div class="control-group" style="flex-direction: row; align-items: center; gap: 10px;">
-				<input type="checkbox" id="animToggle" checked style="width: auto; accent-color: #4af;">
-				<label for="animToggle" style="text-transform: none; font-size: 0.95rem; color: #e0e0e0;" data-i18n="lblAnim">Noise animation</label>
+			<div class="control-group row">
+				<input type="checkbox" id="animToggle" checked>
+				<label for="animToggle" data-i18n="lblAnim">Noise animation</label>
 			</div>
 
-			<div class="control-group" style="flex-direction: row; align-items: center; gap: 10px;">
-				<input type="checkbox" id="stableNoise" checked style="width: auto; accent-color: #4af;">
-				<label for="stableNoise" style="text-transform: none; font-size: 0.95rem; color: #e0e0e0;" data-i18n="lblStableNoise">Stable noise (same seed)</label>
+			<div class="control-group row">
+				<input type="checkbox" id="stableNoise" checked>
+				<label for="stableNoise" data-i18n="lblStableNoise">Stable noise (same seed)</label>
 			</div>
 
 			<div class="control-group">
@@ -193,7 +228,7 @@
 				<button id="showStereoBtn" class="active" data-i18n="btnStereo">Stereogram</button>
 				<button id="showDepthBtn" data-i18n="btnDepth">Show Depth Map</button>
 			</div>
-			
+
 			<div class="canvas-wrapper">
 				<canvas id="mainCanvas" width="700" height="450"></canvas>
 				<canvas id="guideCanvas" class="guide-canvas" width="700" height="450"></canvas>
@@ -202,7 +237,271 @@
 	</div>
 
 	<script>
-		// --- I18N: плоская таблица [en, ru, cn, jp] ---
+		// >>> gf-core start — DOM-free math core, extracted verbatim by experiments/gf-core.js
+		const SEED = 1;
+		const MIN_SHIFT = 8;	// below this a scanline degenerates into a 1 px smear
+		const HSR_EPS = 0.01;	// depth tolerance so smooth slopes are not shredded by rounding
+
+		const PATTERN_WHITE = 0, PATTERN_COLOR = 1, PATTERN_SIMPLEX = 2, PATTERN_STRIPE = 3;
+
+		// Mutated in place before each frame; never reallocated (hot path is allocation free).
+		const PAT = { type: PATTERN_WHITE, grain: 2, moveX: 0, moveY: 0, timeZ: 0, frame: 0 };
+
+		function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+		// Linear stereo separation. Single source of truth for guide dots, drag clamp and renderer.
+		function periodAt(z, period, depthScale) {
+			const s = Math.round(period - z * depthScale);
+			return s < MIN_SHIFT ? MIN_SHIFT : s;
+		}
+
+		// Canvas ImageData is little-endian RGBA, so one Uint32 store replaces four byte stores.
+		function packRGBA(r, g, b) { return (0xff000000 | (b << 16) | (g << 8) | r) >>> 0; }
+
+		// Deterministic hash PRNG. Stable mode keeps frame at zero; unstable mode evolves it.
+		function hashNoise(x, y, channel, frame) {
+			const h = Math.sin(x * 12.9898 + y * 78.233 + channel * 37.719 + SEED * 11.17 + frame * 19.19) * 43758.5453123;
+			return h - Math.floor(h);
+		}
+
+		// Compact, seeded 3D simplex noise (smooth coherent noise with an animated Z axis).
+		const simplexPerm = (() => {
+			const arr = new Uint8Array(256);
+			for (let i = 0; i < 256; i++) arr[i] = i;
+			let state = 0x9e3779b9 ^ SEED;
+			function rnd() {
+				state = (state + 0x6D2B79F5) | 0;
+				let t = Math.imul(state ^ (state >>> 15), 1 | state);
+				t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+				return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+			}
+			for (let i = 255; i > 0; i--) {
+				const j = Math.floor(rnd() * (i + 1));
+				const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+			}
+			const perm = new Uint8Array(512);
+			for (let i = 0; i < 512; i++) perm[i] = arr[i & 255];
+			return perm;
+		})();
+
+		const simplexGrad3 = new Int8Array([
+			1,1,0, -1,1,0, 1,-1,0, -1,-1,0,
+			1,0,1, -1,0,1, 1,0,-1, -1,0,-1,
+			0,1,1, 0,-1,1, 0,1,-1, 0,-1,-1
+		]);
+
+		function simplexCorner(x, y, z, gi) {
+			let tt = 0.6 - x * x - y * y - z * z;
+			if (tt < 0) return 0;
+			const g = (gi % 12) * 3;
+			tt *= tt;
+			return tt * tt * (simplexGrad3[g] * x + simplexGrad3[g + 1] * y + simplexGrad3[g + 2] * z);
+		}
+
+		function simplex3(xin, yin, zin) {
+			const F3 = 1 / 3, G3 = 1 / 6;
+			const s = (xin + yin + zin) * F3;
+			const i = Math.floor(xin + s), j = Math.floor(yin + s), k = Math.floor(zin + s);
+			const t = (i + j + k) * G3;
+			const x0 = xin - (i - t), y0 = yin - (j - t), z0 = zin - (k - t);
+
+			let i1, j1, k1, i2, j2, k2;
+			if (x0 >= y0) {
+				if (y0 >= z0) { i1=1; j1=0; k1=0; i2=1; j2=1; k2=0; }
+				else if (x0 >= z0) { i1=1; j1=0; k1=0; i2=1; j2=0; k2=1; }
+				else { i1=0; j1=0; k1=1; i2=1; j2=0; k2=1; }
+			} else {
+				if (y0 < z0) { i1=0; j1=0; k1=1; i2=0; j2=1; k2=1; }
+				else if (x0 < z0) { i1=0; j1=1; k1=0; i2=0; j2=1; k2=1; }
+				else { i1=0; j1=1; k1=0; i2=1; j2=1; k2=0; }
+			}
+
+			const x1 = x0 - i1 + G3, y1 = y0 - j1 + G3, z1 = z0 - k1 + G3;
+			const x2 = x0 - i2 + 2 * G3, y2 = y0 - j2 + 2 * G3, z2 = z0 - k2 + 2 * G3;
+			const x3 = x0 - 1 + 3 * G3, y3 = y0 - 1 + 3 * G3, z3 = z0 - 1 + 3 * G3;
+			const ii = i & 255, jj = j & 255, kk = k & 255;
+
+			const gi0 = simplexPerm[ii + simplexPerm[jj + simplexPerm[kk]]];
+			const gi1 = simplexPerm[ii + i1 + simplexPerm[jj + j1 + simplexPerm[kk + k1]]];
+			const gi2 = simplexPerm[ii + i2 + simplexPerm[jj + j2 + simplexPerm[kk + k2]]];
+			const gi3 = simplexPerm[ii + 1 + simplexPerm[jj + 1 + simplexPerm[kk + 1]]];
+			return 32 * (simplexCorner(x0,y0,z0,gi0) + simplexCorner(x1,y1,z1,gi1) + simplexCorner(x2,y2,z2,gi2) + simplexCorner(x3,y3,z3,gi3));
+		}
+
+		// Packed RGBA of the tiling texture at screen position (x, y), for the current PAT state.
+		function texel(x, y) {
+			const sx = x - PAT.moveX;
+			const sy = y - PAT.moveY;
+			const g = PAT.grain;
+			// Grain is quantized after the pan offset, so a stable seed drifts as one
+			// persistent pattern instead of being regenerated every frame.
+			const nx = Math.floor(sx / g) * g;
+			const ny = Math.floor(sy / g) * g;
+
+			if (PAT.type === PATTERN_WHITE) {
+				const v = hashNoise(nx, ny, 0, PAT.frame) > 0.5 ? 255 : 0;
+				return packRGBA(v, v, v);
+			}
+			if (PAT.type === PATTERN_COLOR) {
+				return packRGBA(
+					(hashNoise(nx, ny, 0, PAT.frame) * 256) | 0,
+					(hashNoise(nx, ny, 1, PAT.frame) * 256) | 0,
+					(hashNoise(nx, ny, 2, PAT.frame) * 256) | 0);
+			}
+			if (PAT.type === PATTERN_SIMPLEX) {
+				const n = simplex3(sx / (g * 18), sy / (g * 18), PAT.timeZ);
+				const v = clamp((n * 0.5 + 0.5) * 255, 0, 255) | 0;
+				return packRGBA(v, v, v);
+			}
+			// stripe: & 255 wraps the red ramp over a full byte (the old % 255 skipped a value)
+			const v = ((Math.sin(sx * 0.15 + PAT.timeZ * 12) + 1) * 127) | 0;
+			return packRGBA((v + (Math.floor(sy) % 30) * 4) & 255, v, 255 - v);
+		}
+
+		// One SIRDS scanline of links. `links[rowOffset + x]` doubles as the union-find array and
+		// as the final output: after this call it holds the leftmost index x must copy its colour
+		// from (x itself when free), so the fill pass is a pure gather.
+		//
+		// HSR is an exact two-eye z-buffer: all surface points that map to the same left (or right)
+		// screen pixel lie on that eye's ray, so only the nearest one may claim it. O(w), no march.
+		function linkRow(depth, links, rowOffset, w, period, depthScale, useHsr, leftZ, rightZ) {
+			for (let x = 0; x < w; x++) links[rowOffset + x] = x;
+
+			if (useHsr) {
+				for (let x = 0; x < w; x++) { leftZ[x] = -1; rightZ[x] = -1; }
+				for (let x = 0; x < w; x++) {
+					const z = depth[rowOffset + x];
+					const s = periodAt(z, period, depthScale);
+					const left = x - (s >> 1);
+					const right = left + s;
+					if (left < 0 || right >= w) continue;
+					if (z > leftZ[left]) leftZ[left] = z;
+					if (z > rightZ[right]) rightZ[right] = z;
+				}
+			}
+
+			for (let x = 0; x < w; x++) {
+				const z = depth[rowOffset + x];
+				const s = periodAt(z, period, depthScale);
+				const left = x - (s >> 1);
+				const right = left + s;
+				if (left < 0 || right >= w) continue;
+				if (useHsr && (z < leftZ[left] - HSR_EPS || z < rightZ[right] - HSR_EPS)) continue;
+
+				// union-find with path halving; the root is always the leftmost index (links[i] <= i)
+				let ra = left;
+				while (links[rowOffset + ra] !== ra) {
+					links[rowOffset + ra] = links[rowOffset + links[rowOffset + ra]];
+					ra = links[rowOffset + ra];
+				}
+				let rb = right;
+				while (links[rowOffset + rb] !== rb) {
+					links[rowOffset + rb] = links[rowOffset + links[rowOffset + rb]];
+					rb = links[rowOffset + rb];
+				}
+				if (ra === rb) continue;
+				if (ra < rb) links[rowOffset + rb] = ra; else links[rowOffset + ra] = rb;
+			}
+
+			// Flatten to final roots. links[x] <= x holds, so a single left-to-right hop is enough.
+			for (let x = 1; x < w; x++) {
+				const r = links[rowOffset + x];
+				if (r !== x) links[rowOffset + x] = links[rowOffset + r];
+			}
+		}
+
+		// --- depth presets: flat table of (depth, w, h) fillers, all sized relative to w/h ---
+		function fillShapes(d, w, h) {
+			d.fill(0);
+			const rx0 = (w * 0.17) | 0, ry0 = (h * 0.26) | 0;
+			const rx1 = rx0 + ((w * 0.26) | 0), ry1 = ry0 + ((h * 0.42) | 0);
+			for (let y = ry0; y < ry1; y++) for (let x = rx0; x < rx1; x++) d[y * w + x] = 0.55;
+
+			const cx = w * 0.67, cy = h * 0.48, r = Math.min(w, h) * 0.155, r2 = r * r;
+			const y0 = Math.max(0, (cy - r) | 0), y1 = Math.min(h, (cy + r + 1) | 0);
+			const x0 = Math.max(0, (cx - r) | 0), x1 = Math.min(w, (cx + r + 1) | 0);
+			for (let y = y0; y < y1; y++) {
+				const dy = y - cy;
+				for (let x = x0; x < x1; x++) {
+					const dx = x - cx;
+					if (dx * dx + dy * dy <= r2) d[y * w + x] = 0.95;
+				}
+			}
+		}
+
+		function fillTorus(d, w, h) {
+			const cx = w * 0.5, cy = h * 0.5;
+			const maxR = Math.min(w, h) * 0.31, minR = maxR * 0.36;
+			const mid = (minR + maxR) * 0.5, thick = (maxR - minR) * 0.5;
+			for (let y = 0; y < h; y++) {
+				const dy = y - cy;
+				for (let x = 0; x < w; x++) {
+					const dx = x - cx;
+					const dist = Math.sqrt(dx * dx + dy * dy);
+					const ridge = 1 - Math.abs(dist - mid) / thick;
+					d[y * w + x] = ridge > 0 ? ridge * 0.90 : 0;
+				}
+			}
+		}
+
+		function fillHeart(d, w, h) {
+			const cx = w * 0.5, cy = h * 0.52, scale = Math.min(w, h) * 0.30;
+			for (let y = 0; y < h; y++) {
+				const hy = (cy - y) / scale;
+				const hy3 = hy * hy * hy;
+				for (let x = 0; x < w; x++) {
+					const hx = (x - cx) / scale;
+					const q = hx * hx + hy * hy - 1;
+					// classic implicit heart; -f is ~1 at the centre and 0 on the outline
+					const f = q * q * q - hx * hx * hy3;
+					d[y * w + x] = f < 0 ? 0.25 + 0.70 * Math.min(1, Math.cbrt(-f)) : 0;
+				}
+			}
+		}
+
+		function fillRipples(d, w, h) {
+			const cx = w * 0.5, cy = h * 0.5, norm = 2 / Math.min(w, h);
+			const waves = 3.5 * Math.PI * 2;
+			for (let y = 0; y < h; y++) {
+				const dy = y - cy;
+				for (let x = 0; x < w; x++) {
+					const dx = x - cx;
+					const rr = Math.sqrt(dx * dx + dy * dy) * norm;
+					const falloff = 1 - rr * 0.75;
+					d[y * w + x] = falloff > 0 ? (Math.cos(rr * waves) + 1) * 0.45 * falloff : 0;
+				}
+			}
+		}
+
+		function fillPyramid(d, w, h) {
+			const steps = 5, cx = w * 0.5, cy = h * 0.5;
+			const halfW = w * 0.30, halfH = h * 0.38;
+			for (let y = 0; y < h; y++) {
+				const ny = Math.abs(y - cy) / halfH;
+				for (let x = 0; x < w; x++) {
+					const q = Math.max(Math.abs(x - cx) / halfW, ny);
+					d[y * w + x] = q < 1 ? Math.ceil((1 - q) * steps) / steps * 0.95 : 0;
+				}
+			}
+		}
+
+		// invert + contrast, branch free so the whole map is one linear pass
+		function postProcessDepth(d, n, invert, contrast) {
+			const sign = invert ? -1 : 1;
+			const base = invert ? 1 : 0;
+			for (let i = 0; i < n; i++) {
+				const z = (base + sign * d[i] - 0.5) * contrast + 0.5;
+				d[i] = z < 0 ? 0 : (z > 1 ? 1 : z);
+			}
+		}
+
+		if (typeof module !== 'undefined' && module.exports) {
+			module.exports = { SEED, MIN_SHIFT, HSR_EPS, PAT, clamp, periodAt, packRGBA, hashNoise, simplex3, texel, linkRow,
+				fillShapes, fillTorus, fillHeart, fillRipples, fillPyramid, postProcessDepth };
+		}
+		// <<< gf-core end
+
+		// --- I18N: flat table [en, ru, cn, jp] ---
 		const LANGS = ['en', 'ru', 'cn', 'jp'];
 		const LANG_TAGS = { en: 'en', ru: 'ru', cn: 'zh', jp: 'ja' };
 		const LANG_LABELS = { en: 'EN', ru: 'RU', cn: '中文', jp: 'JP' };
@@ -214,18 +513,30 @@
 				'注视图像底部的两个灰色圆点，透过画面看，即可看到立体的 3D 图像。',
 				'画像下部の 2 つのグレーの点を見つめ、画面を「通り越えて」見ると立体的な 3D 画像が見えてきます。'
 			],
+			hintDrag: [
+				'Drag the image: left/right tunes the period, up/down tunes the depth. Drag the dots to set the period.',
+				'Тяните картинку: влево/вправо — период, вверх/вниз — глубина. Тяните точки — период.',
+				'拖动画面：左右调节周期，上下调节深度。拖动圆点也可设置周期。',
+				'画像をドラッグ：左右で周期、上下で奥行き。点をドラッグしても周期を設定できます。'
+			],
 			lblDepthMap: ['1. Choose depth map:', '1. Выберите карту глубин:', '1. 选择深度图：', '1. 深度マップを選択：'],
 			optShapes: ['Geometric shapes (square and circle)', 'Геометрические фигуры (Квадрат и Круг)', '几何图形（正方形与圆形）', '幾何図形（正方形と円）'],
 			optTorus: ['3D ring (smooth gradient)', '3D Кольцо (Плавный градиент)', '3D 圆环（平滑渐变）', '3D リング（なめらかなグラデーション）'],
-			optText3d: ['Text "3D LAB"', 'Текст "3D LAB"', '文字 "3D LAB"', '文字 "3D LAB"'],
+			optHeart: ['Heart', 'Сердце', '心形', 'ハート'],
+			optRipples: ['Ripples (concentric waves)', 'Круги на воде (волны)', '涟漪（同心波纹）', '波紋（同心円の波）'],
+			optPyramid: ['Step pyramid', 'Ступенчатая пирамида', '阶梯金字塔', '階段ピラミッド'],
+			optText3d: ['Text', 'Текст', '文字', '文字'],
+			lblCustomText: ['Custom text:', 'Свой текст:', '自定义文字：', 'カスタム文字：'],
 			lblTexture: ['2. Texture type:', '2. Тип текстуры:', '2. 纹理类型：', '2. テクスチャの種類：'],
 			optWhite: ['White noise (black/white)', 'Белый шум (черно-белый)', '白噪声（黑白）', 'ホワイトノイズ（白黒）'],
-			optBw: ['Black-and-white noise (easier to focus)', 'Черно-белый шум (Легче для фокуса)', '黑白噪声（更容易对焦）', '白黒ノイズ（ピントが合わせやすい）'],
 			optColor: ['Colored white noise', 'Цветной белый шум', '彩色白噪声', 'カラーホワイトノイズ'],
 			optSimplex3d: ['Simplex 3D noise', 'Simplex 3D шум', 'Simplex 3D 噪声', 'Simplex 3D ノイズ'],
 			optStripe: ['Psychedelic stripes', 'Психоделические полосы', '迷幻条纹', 'サイケデリックなストライプ'],
 			lblPeriod: ['Pattern period (pixels):', 'Период паттерна (глаза):', '图案周期（像素）：', 'パターン周期（ピクセル）：'],
 			lblDepth: ['Depth (3D effect strength):', 'Глубина (сила 3D-эффекта):', '深度（3D 效果强度）：', '奥行き（3D 効果の強さ）：'],
+			lblContrast: ['Depth contrast:', 'Контраст глубины:', '深度对比度：', '深度のコントラスト：'],
+			lblInvert: ['Invert depth', 'Инвертировать глубину', '反转深度', '深度を反転'],
+			lblHsr: ['Hide hidden surfaces', 'Скрывать невидимые поверхности', '隐藏被遮挡面', '隠面を消去'],
 			lblGrain: ['Noise grain size:', 'Размер зерна шума:', '噪声颗粒大小：', 'ノイズの粒の大きさ：'],
 			lblAnim: ['Noise animation', 'Анимация шума', '噪声动画', 'ノイズのアニメーション'],
 			lblStableNoise: ['Stable noise (same seed)', 'Стабильный шум (тот же seed)', '稳定噪声（相同种子）', '安定ノイズ（同じシード）'],
@@ -272,122 +583,171 @@
 			langBarEl.appendChild(btn);
 		});
 
-		const seed = 1;
-		let animFrame = 0;
-		let isAnimating = true;
-
-		function hashNoise(x, y, channel = 0, frame = 0) {
-			// Deterministic hash PRNG. Stable mode keeps frame at zero; unstable mode evolves it.
-			const h = Math.sin(x * 12.9898 + y * 78.233 + channel * 37.719 + seed * 11.17 + frame * 19.19) * 43758.5453123;
-			return h - Math.floor(h);
-		}
-
-		// Compact, seeded 3D simplex noise (smooth coherent noise with an animated Z axis).
-		const simplexPerm = (() => {
-			const arr = new Uint8Array(256);
-			for (let i = 0; i < 256; i++) arr[i] = i;
-			let state = 0x9e3779b9 ^ seed;
-			function rnd() {
-				state |= 0;
-				state = (state + 0x6D2B79F5) | 0;
-				let t = Math.imul(state ^ (state >>> 15), 1 | state);
-				t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-				return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-			}
-			for (let i = 255; i > 0; i--) {
-				const j = Math.floor(rnd() * (i + 1));
-				const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
-			}
-			const perm = new Uint8Array(512);
-			for (let i = 0; i < 512; i++) perm[i] = arr[i & 255];
-			return perm;
-		})();
-
-		const simplexGrad3 = [
-			[1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
-			[1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
-			[0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]
-		];
-
-		function simplex3(xin, yin, zin) {
-			const F3 = 1 / 3, G3 = 1 / 6;
-			const s = (xin + yin + zin) * F3;
-			const i = Math.floor(xin + s), j = Math.floor(yin + s), k = Math.floor(zin + s);
-			const t = (i + j + k) * G3;
-			const X0 = i - t, Y0 = j - t, Z0 = k - t;
-			const x0 = xin - X0, y0 = yin - Y0, z0 = zin - Z0;
-
-			let i1, j1, k1, i2, j2, k2;
-			if (x0 >= y0) {
-				if (y0 >= z0) { i1=1; j1=0; k1=0; i2=1; j2=1; k2=0; }
-				else if (x0 >= z0) { i1=1; j1=0; k1=0; i2=1; j2=0; k2=1; }
-				else { i1=0; j1=0; k1=1; i2=1; j2=0; k2=1; }
-			} else {
-				if (y0 < z0) { i1=0; j1=0; k1=1; i2=0; j2=1; k2=1; }
-				else if (x0 < z0) { i1=0; j1=1; k1=0; i2=0; j2=1; k2=1; }
-				else { i1=0; j1=1; k1=0; i2=1; j2=1; k2=0; }
-			}
-
-			const x1 = x0 - i1 + G3, y1 = y0 - j1 + G3, z1 = z0 - k1 + G3;
-			const x2 = x0 - i2 + 2 * G3, y2 = y0 - j2 + 2 * G3, z2 = z0 - k2 + 2 * G3;
-			const x3 = x0 - 1 + 3 * G3, y3 = y0 - 1 + 3 * G3, z3 = z0 - 1 + 3 * G3;
-			const ii = i & 255, jj = j & 255, kk = k & 255;
-
-			function corner(x, y, z, gi) {
-				let tt = 0.6 - x*x - y*y - z*z;
-				if (tt < 0) return 0;
-				const g = simplexGrad3[gi % 12];
-				tt *= tt;
-				return tt * tt * (g[0]*x + g[1]*y + g[2]*z);
-			}
-
-			const gi0 = simplexPerm[ii + simplexPerm[jj + simplexPerm[kk]]];
-			const gi1 = simplexPerm[ii + i1 + simplexPerm[jj + j1 + simplexPerm[kk + k1]]];
-			const gi2 = simplexPerm[ii + i2 + simplexPerm[jj + j2 + simplexPerm[kk + k2]]];
-			const gi3 = simplexPerm[ii + 1 + simplexPerm[jj + 1 + simplexPerm[kk + 1]]];
-			return 32 * (corner(x0,y0,z0,gi0) + corner(x1,y1,z1,gi1) + corner(x2,y2,z2,gi2) + corner(x3,y3,z3,gi3));
-		}
-
+		// --- DOM ---
 		const canvas = document.getElementById('mainCanvas');
-		const ctx = canvas.getContext('2d', { willReadFrequently: true });
+		const ctx = canvas.getContext('2d');
 		const guideCanvas = document.getElementById('guideCanvas');
 		const guideCtx = guideCanvas.getContext('2d');
+
+		const depthPreset = document.getElementById('depthPreset');
+		const depthTextInput = document.getElementById('depthText');
+		const depthTextRow = document.getElementById('depthTextRow');
+		const patternType = document.getElementById('patternType');
+		const patternWidthInput = document.getElementById('patternWidth');
+		const depthFactorInput = document.getElementById('depthFactor');
+		const depthContrastInput = document.getElementById('depthContrast');
+		const depthInvertToggle = document.getElementById('depthInvert');
+		const hsrToggle = document.getElementById('hsrToggle');
+		const noiseScaleInput = document.getElementById('noiseScale');
+		const noiseVxInput = document.getElementById('noiseVx');
+		const noiseVyInput = document.getElementById('noiseVy');
+		const renderBtn = document.getElementById('renderBtn');
+		const showStereoBtn = document.getElementById('showStereoBtn');
+		const showDepthBtn = document.getElementById('showDepthBtn');
+		const animToggle = document.getElementById('animToggle');
+		const stableNoiseToggle = document.getElementById('stableNoise');
+
+		const PATTERN_IDS = { white: PATTERN_WHITE, color: PATTERN_COLOR, simplex3d: PATTERN_SIMPLEX, stripe: PATTERN_STRIPE };
+
+		let animFrame = 0;
+		let isAnimating = true;
+		let currentMode = 'stereo';	// 'stereo' | 'depth'
+		let linksDirty = true;
+
+		// --- buffers: allocated on resize only, mutated in place per frame ---
+		let depthF32 = null;	// 0..1 depth, the single source of truth
+		let linkI32 = null;		// per pixel: leftmost index to copy the colour from
+		let hsrLeftZ = null, hsrRightZ = null;
+		let outImg = null, outU32 = null;
+
+		function ensureBuffers(w, h) {
+			const n = w * h;
+			if (!depthF32 || depthF32.length !== n) {
+				depthF32 = new Float32Array(n);
+				linkI32 = new Int32Array(n);
+			}
+			if (!hsrLeftZ || hsrLeftZ.length !== w) {
+				hsrLeftZ = new Float32Array(w);
+				hsrRightZ = new Float32Array(w);
+			}
+			if (!outImg || outImg.width !== w || outImg.height !== h) {
+				outImg = ctx.createImageData(w, h);
+				outU32 = new Uint32Array(outImg.data.buffer);
+			}
+		}
+
+		// Text is the one preset that needs a rasterizer; keep it on its own scratch canvas so the
+		// visible canvas never has to be read back.
+		const textCanvas = document.createElement('canvas');
+		const textCtx = textCanvas.getContext('2d', { willReadFrequently: true });
+
+		function fillText3d(d, w, h) {
+			const s = depthTextInput.value.trim() || '3D LAB';
+			textCanvas.width = w;
+			textCanvas.height = h;
+			textCtx.fillStyle = '#000';
+			textCtx.fillRect(0, 0, w, h);
+			textCtx.textAlign = 'center';
+			textCtx.textBaseline = 'middle';
+
+			let size = Math.max(8, Math.round(h * 0.28));
+			textCtx.font = 'bold ' + size + 'px sans-serif';
+			const measured = textCtx.measureText(s).width;
+			const maxW = w * 0.86;
+			if (measured > maxW) {
+				size = Math.max(8, Math.floor(size * maxW / measured));
+				textCtx.font = 'bold ' + size + 'px sans-serif';
+			}
+
+			const off = Math.max(2, Math.round(size * 0.06));
+			textCtx.fillStyle = 'rgb(150,150,150)';	// drop layer sits behind the face
+			textCtx.fillText(s, w * 0.5 - off, h * 0.5 - off);
+			textCtx.fillStyle = '#fff';
+			textCtx.fillText(s, w * 0.5, h * 0.5);
+
+			const px = textCtx.getImageData(0, 0, w, h).data;
+			for (let i = 0, n = w * h; i < n; i++) d[i] = px[i * 4] / 255;
+		}
+
+		const DEPTH_PRESETS = { shapes: fillShapes, torus: fillTorus, heart: fillHeart, ripples: fillRipples, pyramid: fillPyramid, text3d: fillText3d };
+
+		function generateDepthMap() {
+			const w = canvas.width, h = canvas.height;
+			(DEPTH_PRESETS[depthPreset.value] || fillShapes)(depthF32, w, h);
+			postProcessDepth(depthF32, w * h, depthInvertToggle.checked, parseFloat(depthContrastInput.value));
+			linksDirty = true;
+		}
+
+		function buildLinks() {
+			const w = canvas.width, h = canvas.height;
+			const period = parseInt(patternWidthInput.value);
+			const depthScale = parseInt(depthFactorInput.value);
+			const useHsr = hsrToggle.checked;
+			for (let y = 0; y < h; y++) linkRow(depthF32, linkI32, y * w, w, period, depthScale, useHsr, hsrLeftZ, hsrRightZ);
+			linksDirty = false;
+		}
+
+		// --- render ---
+		function renderSirds() {
+			const w = canvas.width, h = canvas.height;
+			if (linksDirty) buildLinks();
+
+			PAT.type = PATTERN_IDS[patternType.value];
+			PAT.grain = parseInt(noiseScaleInput.value);
+			PAT.moveX = animFrame * parseFloat(noiseVxInput.value);
+			PAT.moveY = animFrame * parseFloat(noiseVyInput.value);
+			const stable = stableNoiseToggle.checked;
+			PAT.timeZ = stable ? 0 : animFrame * 0.045;
+			PAT.frame = stable ? 0 : animFrame;
+
+			// links[x] is the leftmost index of the group, so the source pixel is always already
+			// written: one gather pass, zero allocations.
+			for (let y = 0; y < h; y++) {
+				const o = y * w;
+				for (let x = 0; x < w; x++) {
+					const r = linkI32[o + x];
+					outU32[o + x] = r === x ? texel(x, y) : outU32[o + r];
+				}
+			}
+			ctx.putImageData(outImg, 0, 0);
+		}
+
+		function renderDepthView() {
+			for (let i = 0, n = canvas.width * canvas.height; i < n; i++) {
+				const v = (depthF32[i] * 255) | 0;
+				outU32[i] = packRGBA(v, v, v);
+			}
+			ctx.putImageData(outImg, 0, 0);
+		}
+
+		function drawFrame() {
+			if (currentMode === 'depth') renderDepthView(); else renderSirds();
+		}
+
+		// --- guide dots: a second pattern-period slider drawn on the image ---
 		const GUIDE_TAU = Math.PI * 2;
-		const GUIDE_R = 9;		// радиус точки
-		const GUIDE_HIT = 22;	// зона захвата вокруг точки
+		const GUIDE_R = 9;
+		const GUIDE_HIT = 22;
 		const GUIDE_MIN_SEP = 40;
-		let guideDrag = false;
 		const guidePos = { l: 0, r: 0 };
 		const guidePtr = { x: 0, y: 0 };
 
-		function clampPatternWidth(v) {
-			const min = parseInt(patternWidthInput.min);
-			const max = parseInt(patternWidthInput.max);
-			return Math.min(Math.max(Math.round(v), min), max);
-		}
-
-		// The guide dots are a second pattern-period slider. Their separation mirrors the
-		// Pattern period GUI slider, and dragging them writes back into that slider.
-		function guideSeparation() {
-			return clampPatternWidth(parseInt(patternWidthInput.value));
-		}
+		function guideY() { return guideCanvas.height - Math.max(20, Math.round(guideCanvas.height * 0.062)); }
 
 		function updateGuidePos() {
 			const w = guideCanvas.width;
-			const sep = Math.min(Math.max(GUIDE_MIN_SEP, guideSeparation()), w * 0.95);
+			const sep = clamp(parseInt(patternWidthInput.value), GUIDE_MIN_SEP, w * 0.95);
 			guidePos.l = (w - sep) * 0.5;
 			guidePos.r = guidePos.l + sep;
 		}
 
-		// Точки фиксации: две залитые точки с темной обводкой (видны на любом шуме)
 		function drawGuides() {
-			const w = guideCanvas.width;
-			const h = guideCanvas.height;
+			const w = guideCanvas.width, h = guideCanvas.height;
 			guideCtx.clearRect(0, 0, w, h);
 			if (w < 4 || h < 4) return;
 
 			updateGuidePos();
-			const y = h - 28;
+			const y = guideY();
 			guideCtx.fillStyle = '#e0e0e0';
 			guideCtx.strokeStyle = '#000000';
 			guideCtx.lineWidth = 3;
@@ -398,329 +758,175 @@
 			guideCtx.fill();
 		}
 
-		function guidePointer(e) {
+		function readPointer(e) {
 			const rect = canvas.getBoundingClientRect();
 			guidePtr.x = rect.width > 0 ? (e.clientX - rect.left) * (canvas.width / rect.width) : 0;
 			guidePtr.y = rect.height > 0 ? (e.clientY - rect.top) * (canvas.height / rect.height) : 0;
 		}
 
-		function overGuideDot(e) {
-			guidePointer(e);
-			if (Math.abs(guidePtr.y - (guideCanvas.height - 28)) > GUIDE_HIT) return false;
+		function overGuideDot() {
+			if (Math.abs(guidePtr.y - guideY()) > GUIDE_HIT) return false;
 			return Math.abs(guidePtr.x - guidePos.l) <= GUIDE_HIT || Math.abs(guidePtr.x - guidePos.r) <= GUIDE_HIT;
 		}
 
-		// Pair of dots behaves like a slider: drag either dot and the other mirrors it.
-		function dragGuides(e) {
-			guidePointer(e);
-			const w = guideCanvas.width;
-			const maxVisibleSep = Math.min(parseInt(patternWidthInput.max), w * 0.95);
-			const nextSep = Math.min(Math.max(2 * Math.abs(guidePtr.x - w * 0.5), parseInt(patternWidthInput.min)), maxVisibleSep);
-			const nextValue = String(clampPatternWidth(nextSep));
-			if (patternWidthInput.value !== nextValue) {
-				patternWidthInput.value = nextValue;
-				updateSlidersDisplay();
-				updateExecution();
-				saveSettings();
-			} else {
-				drawGuides();
-			}
+		// --- control values: sliders stay the single source of truth, drag just writes them ---
+		function clampPeriod(v) {
+			return clamp(Math.round(v), parseInt(patternWidthInput.min), parseInt(patternWidthInput.max));
 		}
 
-		canvas.addEventListener('pointerdown', e => {
-			if (!overGuideDot(e)) return;
-			guideDrag = true;
-			canvas.setPointerCapture(e.pointerId);
-			canvas.classList.add('grabbing');
-			dragGuides(e);
-			e.preventDefault();
-		});
+		// depth may never eat the whole period, otherwise near rows collapse to MIN_SHIFT
+		function clampDepth(v, period) {
+			return clamp(Math.round(v), parseInt(depthFactorInput.min), Math.min(parseInt(depthFactorInput.max), period - MIN_SHIFT));
+		}
 
-		canvas.addEventListener('pointermove', e => {
-			if (guideDrag) { dragGuides(e); return; }
-			canvas.classList.toggle('over-dots', overGuideDot(e));
-		});
+		function setPeriodAndDepth(period, depth) {
+			const p = clampPeriod(period);
+			const d = clampDepth(depth, p);
+			if (parseInt(patternWidthInput.value) === p && parseInt(depthFactorInput.value) === d) return false;
+			patternWidthInput.value = String(p);
+			depthFactorInput.value = String(d);
+			return true;
+		}
 
-		for (const ev of ['pointerup', 'pointercancel']) canvas.addEventListener(ev, e => {
-			if (!guideDrag) return;
-			guideDrag = false;
-			canvas.classList.remove('grabbing');
-			if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
-		});
-
-		// Элементы управления
-		const depthPreset = document.getElementById('depthPreset');
-		const patternType = document.getElementById('patternType');
-		const patternWidthInput = document.getElementById('patternWidth');
-		const depthFactorInput = document.getElementById('depthFactor');
-		const noiseScaleInput = document.getElementById('noiseScale');
-		const noiseVxInput = document.getElementById('noiseVx');
-		const noiseVyInput = document.getElementById('noiseVy');
-		const renderBtn = document.getElementById('renderBtn');
-		const showStereoBtn = document.getElementById('showStereoBtn');
-		const showDepthBtn = document.getElementById('showDepthBtn');
-		const animToggle = document.getElementById('animToggle');
-		const stableNoiseToggle = document.getElementById('stableNoise');
-
-		// Буферы для хранения состояний
-		let depthDataBuffer = null; 
-		let currentMode = 'stereo'; // 'stereo' или 'depth'
-
-		// Обновление значений в интерфейсе
 		function updateSlidersDisplay() {
-			document.getElementById('patternWidthVal').innerText = patternWidthInput.value + ' px';
-			document.getElementById('depthFactorVal').innerText = depthFactorInput.value + ' px';
+			const period = parseInt(patternWidthInput.value);
+			const depthScale = parseInt(depthFactorInput.value);
+			document.getElementById('patternWidthVal').innerText = period + ' px';
+			document.getElementById('depthFactorVal').innerText = depthScale + ' px  (' + periodAt(1, period, depthScale) + '…' + period + ' px)';
+			document.getElementById('depthContrastVal').innerText = Number(depthContrastInput.value).toFixed(1) + 'x';
 			document.getElementById('noiseScaleVal').innerText = noiseScaleInput.value + ' px';
 			document.getElementById('noiseVxVal').innerText = Number(noiseVxInput.value).toFixed(1) + ' px/frame';
 			document.getElementById('noiseVyVal').innerText = Number(noiseVyInput.value).toFixed(1) + ' px/frame';
 		}
 
-		[patternWidthInput, depthFactorInput, noiseScaleInput, noiseVxInput, noiseVyInput].forEach(input => {
-			input.addEventListener('input', () => {
-				updateSlidersDisplay();
-				updateExecution();
-				saveSettings();
-			});
-		});
-
-		// --- ГЕНЕРАЦИЯ КАРТ ГЛУБИН (Программная замена картинок) ---
-		function generateDepthMap(type) {
-			const w = canvas.width;
-			const h = canvas.height;
-			ctx.fillStyle = '#000000'; // Черный фон — самый глубокий уровень (задний план)
-			ctx.fillRect(0, 0, w, h);
-
-			if (type === 'shapes') {
-				// Квадрат (средняя глубина)
-				ctx.fillStyle = 'rgb(140, 140, 140)';
-				ctx.fillRect(150, 120, 180, 180);
-				
-				// Круг (ближе всего к зрителю)
-				ctx.fillStyle = 'rgb(255, 255, 255)';
-				ctx.beginPath();
-				ctx.arc(460, 210, 100, 0, Math.PI * 2);
-				ctx.fill();
-			} 
-			else if (type === 'torus') {
-				// Плавное 3D кольцо через градиент
-				const centerX = w / 2;
-				const centerY = h / 2;
-				const maxR = 140;
-				const minR = 50;
-
-				for (let y = 0; y < h; y++) {
-					for (let x = 0; x < w; x++) {
-						const dx = x - centerX;
-						const dy = y - centerY;
-						const dist = Math.sqrt(dx*dx + dy*dy);
-
-						if (dist >= minR && dist <= maxR) {
-							// Находим пик тора (середина кольца)
-							const mid = (minR + maxR) / 2;
-							const thickness = (maxR - minR) / 2;
-							const distanceFromPeak = Math.abs(dist - mid);
-							// Плавный завал к краям кольца
-							const intensity = Math.max(0, 1 - (distanceFromPeak / thickness));
-							const color = Math.floor(intensity * 230); // Яркость
-
-							ctx.fillStyle = `rgb(${color},${color},${color})`;
-							ctx.fillRect(x, y, 1, 1);
-						}
-					}
-				}
-			} 
-			else if (type === 'text3d') {
-				// 3D Надпись
-				ctx.font = 'bold 110px sans-serif';
-				ctx.textAlign = 'center';
-				ctx.textBaseline = 'middle';
-				
-				// Слой подложки (чуть дальше)
-				ctx.fillStyle = 'rgb(150, 150, 150)';
-				ctx.fillText('3D LAB', w / 2 - 5, h / 2 - 5);
-				
-				// Основной текст (ближе)
-				ctx.fillStyle = 'rgb(255, 255, 255)';
-				ctx.fillText('3D LAB', w / 2, h / 2);
-			}
-
-			// Сохраняем карту глубин в буфер
-			depthDataBuffer = ctx.getImageData(0, 0, w, h);
+		// three refresh levels, cheapest first — a period tweak must not re-rasterize text
+		function refreshFrame() {
+			updateSlidersDisplay();
+			drawFrame();
 		}
 
-		// --- АЛГОРИТМ SIRDS СТЕРЕОГРАММЫ ---
-		function renderSirds() {
-			const w = canvas.width;
-			const h = canvas.height;
-			
-			// Считываем настройки
-			const basePeriod = parseInt(patternWidthInput.value);
-			const depthScale = parseInt(depthFactorInput.value);
-			const pType = patternType.value === 'bw' ? 'white' : patternType.value;
-			const noiseScale = parseInt(noiseScaleInput.value);
-			const stableNoise = stableNoiseToggle.checked;
-			const moveX = animFrame * parseFloat(noiseVxInput.value);
-			const moveY = animFrame * parseFloat(noiseVyInput.value);
-			const timeZ = stableNoise ? 0 : animFrame * 0.045;
-			const hashFrame = stableNoise ? 0 : animFrame;
-
-			// Получаем карту глубин из буфера
-			const depthPixels = depthDataBuffer.data;
-			
-			// Создаем массив выходного изображения
-			const outputImgData = ctx.createImageData(w, h);
-			const outPixels = outputImgData.data;
-			
-			// Генерируем одну строку случайного шума/текстуры для повторения
-			function getPatternPixel(x, y) {
-				// Grain quantization is applied after pan offset, so stable white noise moves
-				// as one persistent pattern instead of being regenerated every frame.
-				const sx = x - moveX;
-				const sy = y - moveY;
-				const nx = Math.floor(sx / noiseScale) * noiseScale;
-				const ny = Math.floor(sy / noiseScale) * noiseScale;
-				
-				if (pType === 'white') {
-					const rand = hashNoise(nx, ny, 0, hashFrame) > 0.5 ? 255 : 0;
-					return [rand, rand, rand];
-				} else if (pType === 'color') {
-					const r = Math.floor(hashNoise(nx, ny, 0, hashFrame) * 256);
-					const g = Math.floor(hashNoise(nx, ny, 1, hashFrame) * 256);
-					const b = Math.floor(hashNoise(nx, ny, 2, hashFrame) * 256);
-					return [r, g, b];
-				} else if (pType === 'simplex3d') {
-					const n = simplex3(sx / (noiseScale * 18), sy / (noiseScale * 18), timeZ);
-					const val = Math.max(0, Math.min(255, Math.floor((n * 0.5 + 0.5) * 255)));
-					return [val, val, val];
-				} else if (pType === 'stripe') {
-					const val = Math.floor((Math.sin((sx) * 0.15 + timeZ * 12) + 1) * 127);
-					const r = (val + (Math.floor(sy) % 30) * 4 + 255) % 255;
-					return [r, val, 255 - val];
-				}
-				return [0,0,0];
-			}
-
-			// Алгоритм сдвига пикселей (SIRDS) построчно
-			for (let y = 0; y < h; y++) {
-				// Инициализируем связи пикселей в строке (каждый указывает сам на себя)
-				const sameArr = new Int32Array(w);
-				for (let x = 0; x < w; x++) sameArr[x] = x;
-				
-				// Связываем левые и правые глаза в зависимости от глубины
-				for (let x = 0; x < w; x++) {
-					// Индекс в массиве ImageData (4 байта на пиксель: R,G,B,A)
-					const idx = (y * w + x) * 4;
-					const rValue = depthPixels[idx]; // берем красный канал как уровень глубины (0..255)
-					const z = rValue / 255.0; // нормализация к 0.0 - 1.0
-					
-					// Смещение зависит от базового периода и глубины Z.
-					// depthScale определяет, насколько сильно Z влияет на сжатие периода.
-					const shiftReduction = z * depthScale;
-					const stereoShift = Math.max(1, Math.floor(basePeriod - shiftReduction));
-					const left = Math.floor(x - stereoShift / 2);
-					const right = left + stereoShift;
-					
-					if (left >= 0 && right < w) {
-						sameArr[right] = left; // пиксель справа должен скопировать пиксель слева
-					}
-				}
-				
-				// Временный кэш цветов для текущей строки
-				const rowColors = new Array(w);
-				
-				// Заполняем строку цветами на основе связей пикселей
-				for (let x = 0; x < w; x++) {
-					if (sameArr[x] === x) {
-						// Если пиксель свободен, генерируем для него случайный шум из паттерна
-						rowColors[x] = getPatternPixel(x, y);
-					} else {
-						// Если пиксель связан с левым — копируем цвет левой точки
-						rowColors[x] = rowColors[sameArr[x]];
-					}
-					
-					// Записываем результат в массив вывода
-					const outIdx = (y * w + x) * 4;
-					outPixels[outIdx] = rowColors[x][0]; // R
-					outPixels[outIdx + 1] = rowColors[x][1]; // G
-					outPixels[outIdx + 2] = rowColors[x][2]; // B
-					outPixels[outIdx + 3] = 255; // Alpha (непрозрачно)
-				}
-			}
-			
-			// Выводим готовую стереограмму на холст
-			ctx.putImageData(outputImgData, 0, 0);
-		}
-
-		// --- АНИМАЦИЯ ШУМА ---
-		function animationLoop() {
-			if (isAnimating && currentMode === 'stereo') {
-				animFrame++;
-				renderSirds();
-			}
-			requestAnimationFrame(animationLoop);
-		}
-
-		// --- УПРАВЛЕНИЕ И ПЕРЕКЛЮЧЕНИЕ РЕЖИМОВ ---
-		function updateExecution() {
-			generateDepthMap(depthPreset.value);
-			if (currentMode === 'stereo') {
-				renderSirds();
-			} else {
-				// Если режим карты глубин — просто оставляем отрисованную карту на экране
-				ctx.putImageData(depthDataBuffer, 0, 0);
-			}
+		function refreshLinks() {
+			setPeriodAndDepth(parseInt(patternWidthInput.value), parseInt(depthFactorInput.value));
+			linksDirty = true;
+			updateSlidersDisplay();
+			drawFrame();
 			drawGuides();
 		}
 
-		// Переключение анимации
-		animToggle.addEventListener('change', () => {
-			isAnimating = animToggle.checked;
+		function refreshDepth() {
+			depthTextRow.style.display = depthPreset.value === 'text3d' ? '' : 'none';
+			generateDepthMap();
+			refreshLinks();
+		}
+
+		// --- canvas drag: dX -> period, dY -> depth; guide dots keep their own period-only drag ---
+		const DRAG_NONE = 0, DRAG_DOTS = 1, DRAG_TUNE = 2;
+		const DRAG_K_PERIOD = 1.0;	// ~1 px of drag per slider unit
+		const DRAG_K_DEPTH = 0.6;	// vertical a touch softer, its range is smaller
+		const dragStart = { x: 0, y: 0, period: 100, depth: 20 };
+		let dragMode = DRAG_NONE;
+		let dragRaf = 0;
+
+		function dragDots() {
+			const w = guideCanvas.width;
+			const maxSep = Math.min(parseInt(patternWidthInput.max), w * 0.95);
+			const sep = clamp(2 * Math.abs(guidePtr.x - w * 0.5), parseInt(patternWidthInput.min), maxSep);
+			if (setPeriodAndDepth(sep, parseInt(depthFactorInput.value))) refreshLinks(); else drawGuides();
+		}
+
+		function dragTune() {
+			const period = dragStart.period + (guidePtr.x - dragStart.x) * DRAG_K_PERIOD;
+			const depth = dragStart.depth - (guidePtr.y - dragStart.y) * DRAG_K_DEPTH;	// up = more depth
+			if (setPeriodAndDepth(period, depth)) refreshLinks();
+		}
+
+		// one apply per animation frame even when the pointer fires faster
+		function applyDrag() {
+			dragRaf = 0;
+			if (dragMode === DRAG_DOTS) dragDots();
+			else if (dragMode === DRAG_TUNE) dragTune();
+		}
+
+		canvas.addEventListener('pointerdown', e => {
+			readPointer(e);
+			dragMode = overGuideDot() ? DRAG_DOTS : DRAG_TUNE;
+			dragStart.x = guidePtr.x;
+			dragStart.y = guidePtr.y;
+			dragStart.period = parseInt(patternWidthInput.value);
+			dragStart.depth = parseInt(depthFactorInput.value);
+			canvas.setPointerCapture(e.pointerId);
+			canvas.classList.add('grabbing');
+			if (dragMode === DRAG_DOTS) dragDots();
+			e.preventDefault();
+		});
+
+		canvas.addEventListener('pointermove', e => {
+			readPointer(e);
+			if (dragMode === DRAG_NONE) {
+				canvas.classList.toggle('over-dots', overGuideDot());
+				return;
+			}
+			if (!dragRaf) dragRaf = requestAnimationFrame(applyDrag);
+		});
+
+		for (const ev of ['pointerup', 'pointercancel']) canvas.addEventListener(ev, e => {
+			if (dragMode === DRAG_NONE) return;
+			dragMode = DRAG_NONE;
+			if (dragRaf) { cancelAnimationFrame(dragRaf); dragRaf = 0; }
+			canvas.classList.remove('grabbing');
+			if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
 			saveSettings();
 		});
 
-		stableNoiseToggle.addEventListener('change', () => {
-			updateExecution();
-			saveSettings();
-		});
+		// --- control wiring: flat table of [element, event, handler] ---
+		function setMode(mode) {
+			currentMode = mode;
+			showStereoBtn.classList.toggle('active', mode === 'stereo');
+			showDepthBtn.classList.toggle('active', mode === 'depth');
+		}
 
-		// Кнопка принудительного рендера
-		renderBtn.addEventListener('click', () => {
-			currentMode = 'stereo';
-			showStereoBtn.classList.add('active');
-			showDepthBtn.classList.remove('active');
-			updateExecution();
-		});
+		const CONTROL_ACTIONS = [
+			[depthPreset, 'change', refreshDepth],
+			[depthTextInput, 'input', refreshDepth],
+			[depthContrastInput, 'input', refreshDepth],
+			[depthInvertToggle, 'change', refreshDepth],
+			[patternWidthInput, 'input', refreshLinks],
+			[depthFactorInput, 'input', refreshLinks],
+			[hsrToggle, 'change', refreshLinks],
+			[patternType, 'change', refreshFrame],
+			[noiseScaleInput, 'input', refreshFrame],
+			[noiseVxInput, 'input', refreshFrame],
+			[noiseVyInput, 'input', refreshFrame],
+			[stableNoiseToggle, 'change', refreshFrame],
+			[renderBtn, 'click', () => { setMode('stereo'); refreshDepth(); }],
+			[showStereoBtn, 'click', () => { setMode('stereo'); refreshFrame(); }],
+			[showDepthBtn, 'click', () => { setMode('depth'); refreshFrame(); }],
+			[animToggle, 'change', () => { isAnimating = animToggle.checked; }]
+		];
 
-		// Переключение вкладок просмотра
-		showStereoBtn.addEventListener('click', () => {
-			currentMode = 'stereo';
-			showStereoBtn.classList.add('active');
-			showDepthBtn.classList.remove('active');
+		CONTROL_ACTIONS.forEach(([el, ev, fn]) => el.addEventListener(ev, () => { fn(); saveSettings(); }));
+
+		// --- animation ---
+		// A stable seed with no drift renders an identical frame forever — skip the work.
+		function animationIsStatic() {
+			return stableNoiseToggle.checked && parseFloat(noiseVxInput.value) === 0 && parseFloat(noiseVyInput.value) === 0;
+		}
+
+		function animationLoop() {
+			requestAnimationFrame(animationLoop);
+			if (!isAnimating || currentMode !== 'stereo' || animationIsStatic()) return;
+			animFrame++;
 			renderSirds();
-			saveSettings();
-		});
+		}
 
-		showDepthBtn.addEventListener('click', () => {
-			currentMode = 'depth';
-			showDepthBtn.classList.add('active');
-			showStereoBtn.classList.remove('active');
-			ctx.putImageData(depthDataBuffer, 0, 0);
-			saveSettings();
-		});
-
-		// Смена пресета карты глубин автоматически обновляет холст
-		depthPreset.addEventListener('change', () => {
-			updateExecution();
-			saveSettings();
-		});
-		patternType.addEventListener('change', () => {
-			updateExecution();
-			saveSettings();
-		});
-
+		// --- persistence ---
 		function saveSettings() {
-			const settings = {
+			localStorage.setItem('sirdsSettings', JSON.stringify({
 				depthPreset: depthPreset.value,
+				depthText: depthTextInput.value,
+				depthContrast: depthContrastInput.value,
+				depthInvert: depthInvertToggle.checked,
+				hsr: hsrToggle.checked,
 				patternType: patternType.value,
 				patternWidth: patternWidthInput.value,
 				depthFactor: depthFactorInput.value,
@@ -731,59 +937,53 @@
 				isAnimating: animToggle.checked,
 				currentMode: currentMode,
 				lang: lang
-			};
-			localStorage.setItem('sirdsSettings', JSON.stringify(settings));
+			}));
 		}
 
 		function loadSettings() {
-			try {
-				const raw = localStorage.getItem('sirdsSettings');
-				if (!raw) return;
-				const s = JSON.parse(raw);
-				if (s.depthPreset) depthPreset.value = s.depthPreset;
-				if (s.patternType) patternType.value = s.patternType === 'bw' ? 'white' : s.patternType;
-				if (s.patternWidth) patternWidthInput.value = s.patternWidth;
-				if (s.depthFactor) depthFactorInput.value = s.depthFactor;
-				if (s.noiseScale) noiseScaleInput.value = s.noiseScale;
-				if (typeof s.stableNoise === 'boolean') stableNoiseToggle.checked = s.stableNoise;
-				if (s.noiseVx !== undefined) noiseVxInput.value = s.noiseVx;
-				if (s.noiseVy !== undefined) noiseVyInput.value = s.noiseVy;
-				if (typeof s.isAnimating === 'boolean') {
-					animToggle.checked = s.isAnimating;
-					isAnimating = s.isAnimating;
-				}
-				if (s.currentMode) currentMode = s.currentMode;
-				if (LANGS.indexOf(s.lang) >= 0) lang = s.lang;
-			} catch(e) { /* ignore corrupt data */ }
+			let s = null;
+			try { s = JSON.parse(localStorage.getItem('sirdsSettings')); } catch (e) { /* corrupt data */ }
+			if (!s) return;
+			if (DEPTH_PRESETS[s.depthPreset]) depthPreset.value = s.depthPreset;
+			if (typeof s.depthText === 'string') depthTextInput.value = s.depthText;
+			if (s.depthContrast) depthContrastInput.value = s.depthContrast;
+			if (typeof s.depthInvert === 'boolean') depthInvertToggle.checked = s.depthInvert;
+			if (typeof s.hsr === 'boolean') hsrToggle.checked = s.hsr;
+			if (PATTERN_IDS[s.patternType] !== undefined) patternType.value = s.patternType;
+			if (s.patternWidth) patternWidthInput.value = s.patternWidth;
+			if (s.depthFactor) depthFactorInput.value = s.depthFactor;
+			if (s.noiseScale) noiseScaleInput.value = s.noiseScale;
+			if (typeof s.stableNoise === 'boolean') stableNoiseToggle.checked = s.stableNoise;
+			if (s.noiseVx !== undefined) noiseVxInput.value = s.noiseVx;
+			if (s.noiseVy !== undefined) noiseVyInput.value = s.noiseVy;
+			if (typeof s.isAnimating === 'boolean') animToggle.checked = s.isAnimating;
+			if (LANGS.indexOf(s.lang) >= 0) lang = s.lang;
+			isAnimating = animToggle.checked;
+			setMode(s.currentMode === 'depth' ? 'depth' : 'stereo');
+			setPeriodAndDepth(parseInt(patternWidthInput.value), parseInt(depthFactorInput.value));
+		}
+
+		// --- boot / resize ---
+		function resizeCanvas() {
+			const wrapper = canvas.parentElement;
+			const w = wrapper.clientWidth, h = wrapper.clientHeight;
+			if (w <= 0 || h <= 0) return;
+			if (canvas.width === w && canvas.height === h) return;
+			canvas.width = w;
+			canvas.height = h;
+			guideCanvas.width = w;
+			guideCanvas.height = h;
+			ensureBuffers(w, h);
+			refreshDepth();
 		}
 
 		loadSettings();
 		applyLang();
-		updateSlidersDisplay();
-		updateExecution();
+		ensureBuffers(canvas.width, canvas.height);
+		refreshDepth();
 
+		new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
 		requestAnimationFrame(animationLoop);
-
-		function resizeCanvas() {
-			const wrapper = canvas.parentElement;
-			const newWidth = wrapper.clientWidth;
-			const newHeight = wrapper.clientHeight;
-
-			if (newWidth > 0 && newHeight > 0) {
-				canvas.width = newWidth;
-				canvas.height = newHeight;
-				guideCanvas.width = newWidth;
-				guideCanvas.height = newHeight;
-
-				updateExecution();
-			}
-		}
-
-		const resizeObserver = new ResizeObserver(() => {
-			resizeCanvas();
-		});
-		resizeObserver.observe(canvas.parentElement);
-
 		setTimeout(resizeCanvas, 0);
 	</script>
 </body>
