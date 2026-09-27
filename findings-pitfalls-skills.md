@@ -10,6 +10,10 @@
 - For the linear model `s = P - zD`, the march's step is `zt = z + 2t/D` (from `s(z') = s(z) - 2t`), not the optical `z + 2(2-μz)t/(μE)`. Useful only if you actually want the march.
 - Give the z-buffer test a small tolerance (`z < leftZ[left] - 0.01`), or rounding shreds smooth slopes into stripes.
 - HSR must be a no-op on a flat surface — a plane has nothing to occlude. Good regression test.
+- The z-buffer pass and the link pass must apply the *same* out-of-range skip, and the buffers must be re-cleared on every row: one row of a strong occluder otherwise leaks its maxima into the flat rows below it.
+- The tolerance is much weaker than it looks. A point can only collide with the point one pixel to its left, whose separation is 2 smaller, so two points on the same eye ray differ in depth by between `1/D` and `2/D`. `HSR_EPS = 0.01` therefore rescues nothing once `D < 100`; it only keeps coplanar ties. The integer separation is the real quantizer, not the tolerance.
+- **HSR is correct and still wrong to leave on.** A suppressed point leaves its pixels unsourced, so they sample the pattern at their own `x` instead of a stretched one, and they come in runs — up to 21 px on gf's `shapes` at period 120. At grain 16 that run reads as a blob of unstretched texture, i.e. a smear. It stays opt-in, and out of the saved settings: an old save carries the old default-on value and would keep the smear alive for every returning user.
+- The shipped z-buffer scatters forward (each point writes into its two eye pixels). Test the visibility rule the other way round — for each eye pixel, gather every claimant and take the nearest — or a stale buffer or a swapped eye index passes a self-referential audit. `experiments/hsr-audit.js` does that and demands 100% constraint satisfaction.
 
 ## CPU / GPU parity
 - `Math.sin` hashes are not bit-stable across a CPU and a GPU. White/color use a uint32 mixer (`HASH_K`) with the same literals in the fragment shader; `experiments/gl-parity.js` fails if they drift.

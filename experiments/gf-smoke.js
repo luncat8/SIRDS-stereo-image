@@ -86,6 +86,9 @@ const document = {
 const store = {};
 const localStorage = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } };
 
+// an older save carries the previous default-on HSR; it must not survive the boot
+store.sirdsSettings = JSON.stringify({ hsr: true, patternWidth: '640', depthFactor: '20' });
+
 // real rAF is a queue: animationLoop re-arms itself while a drag callback is also pending
 const rafQueue = new Map();
 let rafId = 0;
@@ -111,6 +114,8 @@ check('guide dots were drawn', !!byId.guideCanvas.ctx);
 check('title translated', document.title.length > 0, JSON.stringify(document.title));
 check('renderer defaults to auto', byId.renderBackend.value === 'auto', byId.renderBackend.value);
 check('no WebGL shows the fallback badge', /fallback/i.test(byId.backendBadge.textContent), byId.backendBadge.textContent);
+check('HSR starts off even when an old save says on', byId.hsrToggle.checked === false);
+check('other settings still restore from an old save', byId.patternWidth.value === '640', byId.patternWidth.value);
 
 function stats() {
 	const u32 = new Uint32Array(ctx.el.lastImage.data.buffer);
@@ -182,8 +187,6 @@ canvas.fire('pointerup', {});
 // --- persistence ----------------------------------------------------------
 byId.depthText.value = 'HI';
 byId.depthText.fire('input');
-byId.hsrToggle.checked = false;
-byId.hsrToggle.fire('change');
 byId.renderBackend.value = 'cpu';
 byId.renderBackend.fire('change');
 check('explicit CPU is not labelled a fallback', byId.backendBadge.textContent.indexOf('fallback') < 0, byId.backendBadge.textContent);
@@ -193,8 +196,9 @@ check('forced WebGL2 without a context falls back', /fallback/i.test(byId.backen
 check('fallback still draws a stereogram', stats().colors > 1);
 
 const saved = JSON.parse(store.sirdsSettings);
-check('settings persisted', saved.depthText === 'HI' && saved.hsr === false && saved.patternWidth === '300' && saved.backend === 'webgl2',
+check('settings persisted', saved.depthText === 'HI' && saved.patternWidth === '300' && saved.backend === 'webgl2',
 	JSON.stringify(saved.depthPreset) + ' ' + saved.patternWidth + ' ' + saved.backend);
+check('HSR is not written to the settings', saved.hsr === undefined);
 
 // --- animation ------------------------------------------------------------
 byId.stableNoise.checked = true;

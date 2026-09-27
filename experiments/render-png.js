@@ -89,4 +89,16 @@ postProcessDepth(depth, W * H, false, 1);
 render(false);
 writePng(path.join(outDir, 'pyramid-sirds-hsr-off.png'), W, H, out);
 console.log('  pyramid hsr=off -> pyramid-sirds-hsr-off.png');
+
+// HSR at a large grain: freed pixels keep their own pattern, so the pair shows the smear
+for (const name of ['pyramid', 'shapes']) {
+	PRESETS[name](depth, W, H);
+	postProcessDepth(depth, W * H, false, 1);
+	PAT.grain = 16;
+	for (const hsr of [true, false]) {
+		render(hsr);
+		writePng(path.join(outDir, name + '-g16-hsr-' + (hsr ? 'on' : 'off') + '.png'), W, H, out);
+	}
+	console.log('  ' + name + ' grain 16 -> ' + name + '-g16-hsr-on.png, ' + name + '-g16-hsr-off.png');
+}
 console.log('written to ' + outDir);

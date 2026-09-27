@@ -206,7 +206,7 @@
 			</div>
 
 			<div class="control-group row">
-				<input type="checkbox" id="hsrToggle" checked>
+				<input type="checkbox" id="hsrToggle">
 				<label for="hsrToggle" data-i18n="lblHsr">Hide hidden surfaces</label>
 			</div>
 
@@ -1404,6 +1404,8 @@ void main() {
 			[depthInvertToggle, 'change', refreshDepth],
 			[patternWidthInput, 'input', refreshLinks],
 			[depthFactorInput, 'input', refreshLinks],
+			// HSR hands every occluded pixel its own noise; that reads as smears once the grain is
+			// large, so it is opt-in and stays out of the saved settings — every load starts clean.
 			[hsrToggle, 'change', refreshLinks],
 			[patternType, 'change', refreshFrame],
 			[noiseScaleInput, 'input', refreshFrame],
@@ -1443,7 +1445,6 @@ void main() {
 				depthText: depthTextInput.value,
 				depthContrast: depthContrastInput.value,
 				depthInvert: depthInvertToggle.checked,
-				hsr: hsrToggle.checked,
 				patternType: patternType.value,
 				patternWidth: patternWidthInput.value,
 				depthFactor: depthFactorInput.value,
@@ -1466,7 +1467,6 @@ void main() {
 			if (typeof s.depthText === 'string') depthTextInput.value = s.depthText;
 			if (s.depthContrast) depthContrastInput.value = s.depthContrast;
 			if (typeof s.depthInvert === 'boolean') depthInvertToggle.checked = s.depthInvert;
-			if (typeof s.hsr === 'boolean') hsrToggle.checked = s.hsr;
 			if (PATTERN_IDS[s.patternType] !== undefined) patternType.value = s.patternType;
 			if (s.patternWidth) patternWidthInput.value = s.patternWidth;
 			if (s.depthFactor) depthFactorInput.value = s.depthFactor;
