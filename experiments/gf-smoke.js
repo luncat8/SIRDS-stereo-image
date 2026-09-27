@@ -43,7 +43,11 @@ function makeEl(tag, attrs) {
 		setAttribute() {}, appendChild(c) { el.children.push(c); },
 		getBoundingClientRect() { return { left: 0, top: 0, width: el.width, height: el.height }; },
 		setPointerCapture() {}, releasePointerCapture() {}, hasPointerCapture() { return true; },
-		getContext() { el.ctx = el.ctx || makeCtx(el); return el.ctx; },
+		getContext(type) {
+			if (type === 'webgl2') return null;
+			el.ctx = el.ctx || makeCtx(el);
+			return el.ctx;
+		},
 		fire(ev, extra) { for (const fn of el.handlers[ev] || []) fn(Object.assign({ pointerId: 1, clientX: 0, clientY: 0, preventDefault() {} }, extra)); }
 	};
 	el.classList = {
@@ -105,6 +109,8 @@ check('canvas resized to its wrapper', canvas.width === WRAP_W && canvas.height 
 check('a frame was pushed to the canvas', ctx.putCount > 0, ctx.putCount + ' putImageData');
 check('guide dots were drawn', !!byId.guideCanvas.ctx);
 check('title translated', document.title.length > 0, JSON.stringify(document.title));
+check('renderer defaults to auto', byId.renderBackend.value === 'auto', byId.renderBackend.value);
+check('no WebGL shows the fallback badge', /fallback/i.test(byId.backendBadge.textContent), byId.backendBadge.textContent);
 
 function stats() {
 	const u32 = new Uint32Array(ctx.el.lastImage.data.buffer);
@@ -178,8 +184,17 @@ byId.depthText.value = 'HI';
 byId.depthText.fire('input');
 byId.hsrToggle.checked = false;
 byId.hsrToggle.fire('change');
+byId.renderBackend.value = 'cpu';
+byId.renderBackend.fire('change');
+check('explicit CPU is not labelled a fallback', byId.backendBadge.textContent.indexOf('fallback') < 0, byId.backendBadge.textContent);
+byId.renderBackend.value = 'webgl2';
+byId.renderBackend.fire('change');
+check('forced WebGL2 without a context falls back', /fallback/i.test(byId.backendBadge.textContent), byId.backendBadge.textContent);
+check('fallback still draws a stereogram', stats().colors > 1);
+
 const saved = JSON.parse(store.sirdsSettings);
-check('settings persisted', saved.depthText === 'HI' && saved.hsr === false && saved.patternWidth === '300', JSON.stringify(saved.depthPreset) + ' ' + saved.patternWidth);
+check('settings persisted', saved.depthText === 'HI' && saved.hsr === false && saved.patternWidth === '300' && saved.backend === 'webgl2',
+	JSON.stringify(saved.depthPreset) + ' ' + saved.patternWidth + ' ' + saved.backend);
 
 // --- animation ------------------------------------------------------------
 byId.stableNoise.checked = true;
@@ -195,6 +210,12 @@ byId.noiseVx.fire('input');
 const movingCount = ctx.putCount;
 for (let i = 0; i < 5; i++) runFrame();
 check('drifting noise redraws every frame', ctx.putCount === movingCount + 5, ctx.putCount - movingCount + ' frames');
+
+const ruBtn = [...byId.langBar.children].find(b => b.dataset.code === 'ru');
+ruBtn.fire('click');
+const backendLbl = i18nEls.find(el => el.dataset.i18n === 'lblBackend');
+check('backend label translated', backendLbl.textContent.indexOf('Рендерер') === 0, backendLbl.textContent);
+check('fallback badge translated', byId.backendBadge.textContent.indexOf('резервный') >= 0, byId.backendBadge.textContent);
 
 console.log(failed === 0 ? '\nall checks passed' : '\n' + failed + ' check(s) FAILED');
 process.exit(failed === 0 ? 0 : 1);

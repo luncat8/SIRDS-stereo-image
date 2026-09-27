@@ -113,7 +113,50 @@ const rampRow = makeRow(W, x => Math.min(1, Math.max(0, (x - 120) / 160)));
 	let shifted = true;
 	for (let x = 4; x < 64; x++) if (texel(x, 0) !== base[x - 4]) shifted = false;
 	check('pan by one grain shifts the stable pattern', shifted);
+
+	PAT.moveX = -4;
+	let neg = true;
+	for (let x = 0; x < 60; x++) if (texel(x, 0) !== base[x + 4]) neg = false;
+	check('pan by minus one grain shifts the other way', neg);
 	PAT.moveX = 0; PAT.grain = 1;
+}
+
+// --- integer grain + hash (the CPU/GPU parity contract) -------------------
+{
+	const { tenthsOf, floorDiv, grainOrigin, hashU32, HASH_BIAS, TENTHS_LIM } = core;
+	check('tenthsOf(4) === 40', tenthsOf(4) === 40);
+	check('tenthsOf(-1.6) === -16', tenthsOf(-1.6) === -16);
+	check('tenthsOf clamps into int32', tenthsOf(1e15) === TENTHS_LIM && tenthsOf(-1e15) === -TENTHS_LIM);
+
+	let grainOk = true;
+	for (const g of [1, 2, 3, 7, 16]) {
+		for (let moveT = -80; moveT <= 80; moveT += 7) {
+			for (let x = -4; x < 90; x++) {
+				const got = grainOrigin(x, moveT, g);
+				const ref = Math.floor((x * 10 - moveT) / (g * 10)) * g;
+				if (got !== ref) grainOk = false;
+			}
+		}
+	}
+	check('grainOrigin matches floor((10x - t) / (10g)) * g', grainOk);
+
+	let restOk = true;
+	for (let g = 1; g <= 8; g++) {
+		for (let x = 0; x < 200; x++) if (grainOrigin(x, tenthsOf(0), g) !== Math.floor(x / g) * g) restOk = false;
+	}
+	check('zero pan matches the old floor(x/g)*g cells', restOk);
+
+	const lo = grainOrigin(0, TENTHS_LIM, 1);
+	check('biased grain coord stays non-negative', lo + HASH_BIAS >= 0, lo + ' + bias');
+	check('hashU32 is stable uint32', hashU32(-3, 4, 1, 2) === hashU32(-3, 4, 1, 2) && hashU32(1, 2, 0, 0) <= 0xffffffff);
+
+	PAT.type = 0; PAT.grain = 1; PAT.moveX = 0; PAT.moveY = 0; PAT.frame = 0;
+	let binary = true;
+	for (let i = 0; i < 64; i++) {
+		const v = texel(i * 3, i);
+		if (v !== 0xff000000 && v !== 0xffffffff) binary = false;
+	}
+	check('white noise is only black or white', binary);
 }
 
 console.log(failed === 0 ? '\nall checks passed' : '\n' + failed + ' check(s) FAILED');

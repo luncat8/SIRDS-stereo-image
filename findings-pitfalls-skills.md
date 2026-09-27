@@ -11,18 +11,26 @@
 - Give the z-buffer test a small tolerance (`z < leftZ[left] - 0.01`), or rounding shreds smooth slopes into stripes.
 - HSR must be a no-op on a flat surface — a plane has nothing to occlude. Good regression test.
 
+## CPU / GPU parity
+- `Math.sin` hashes are not bit-stable across a CPU and a GPU. White/color use a uint32 mixer (`HASH_K`) with the same literals in the fragment shader; `experiments/gl-parity.js` fails if they drift.
+- Grain for those patterns is integer tenths (`floor((10x - tenths) / (10g)) * g`). Slider steps are 0.1 px, and float32 vs float64 disagree exactly at cell edges.
+- Add `HASH_BIAS` before the cast to `uint`. Some mobile drivers drop `uint(negativeInt)`.
+- `preserveDrawingBuffer: false` clears the drawing buffer after composite. A static stereogram (stable seed, no drift) does not redraw, so the image vanishes. Use `true`.
+- `#glCanvas` must be `pointer-events: none`. Hide the 2D canvas with `opacity: 0`, not `visibility: hidden` — a hidden element is not a hit target, and the drag would die.
+- Do not use a Web Worker for this page. Chrome blocks workers on `file://`. Chunk the link rebuild on the page thread instead.
+
 ## hot path
 - Stereo links depend only on depth, period and depth scale — **never on the animation frame**. Cache them in an `Int32Array(w*h)` rebuilt on control change, and the animation loop collapses to one gather: `out[i] = (root === i) ? texel(x,y) : out[rowStart + root]`. This is what makes an exact HSR pass affordable, and it hands a GPU port a parallel gather with no sequential scan.
 - With the leftmost-root invariant `links[x] <= x`, resolving union-find roots is a **single** left-to-right hop (`links[x] = links[links[x]]`), not a loop — everything below `x` is already resolved.
 - Only ~`period` pixels per row are group roots, so the texel function is evaluated ~`period` times per row, not `w` times. Optimizing the pattern sampler matters far less than the per-pixel store.
-- Take a `Uint32Array` view on `ImageData.data.buffer` and write one packed little-endian RGBA word per pixel instead of four byte stores.
+- Take a `Uint32Array` view on `ImageData.data.buffer` and write one packed little-endian RGBA word per pixel instead of four byte stores. Pass `byteOffset` and `w * h` — the buffer is not always a tight view at offset 0.
 - `willReadFrequently: true` forces a software canvas backend. Once depth lives in a `Float32Array` nothing reads the visible canvas back — drop the flag there and put it on the offscreen text-rasterizing canvas only.
 - A stable seed with zero drift renders an identical frame forever. Skip the render instead of burning a `requestAnimationFrame` on it.
 - Throttle pointer-drag handlers to one `requestAnimationFrame` apply; pointer events fire faster than frames.
 
 ## noise
 - Gradient (Perlin/simplex) noise is 0 at integer lattice points. Sampling it at integer coords for "random each frame" gives a flat result. Use a hash for white noise.
-- For animated SIRDS noise, quantize the grain after applying the drift offset (`floor((x - moveX)/grain)`), so the stable seed pans as one persistent pattern.
+- For animated SIRDS noise, quantize the grain after applying the drift offset, so a stable seed pans as one persistent pattern. Do that in integer tenths, not float32, if a GPU has to match it.
 - Procedural tile textures must use a seeded PRNG, not `Math.random`, or regenerating on resize/slider changes flickers.
 - `(v + k + 255) % 255` is an off-by-one wrap that can never produce 255. Use `& 255`.
 

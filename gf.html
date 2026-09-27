@@ -83,7 +83,9 @@
 			background: #000;
 			box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
 			flex: 0 1 auto;
-			width: 100%;
+			/* cap by the viewport height, then derive width so 14/9 still holds */
+			width: min(100%, calc(var(--canvas-max-h) * 14 / 9));
+			max-height: var(--canvas-max-h);
 			min-height: min(200px, 42vh);
 			aspect-ratio: 14 / 9;
 			margin: auto;
@@ -94,7 +96,21 @@
 		#mainCanvas { touch-action: none; cursor: grab; }
 		#mainCanvas.over-dots { cursor: ew-resize; }
 		#mainCanvas.grabbing { cursor: grabbing; }
+		/* stacked on the 2d canvas: WebGL and 2d contexts cannot share one canvas */
+		#glCanvas { pointer-events: none; visibility: hidden; }
 		.guide-canvas { pointer-events: none; }
+		.backend-badge {
+			font-size: 0.72rem;
+			font-weight: 700;
+			letter-spacing: 0.03em;
+			padding: 3px 8px;
+			border-radius: 999px;
+			background: #243044;
+			color: #9cf;
+			border: 1px solid #3a5a88;
+			white-space: nowrap;
+		}
+		.backend-badge.is-cpu { background: #2a2a2a; color: #aaa; border-color: #555; }
 		.toggle-zone { display: flex; gap: 10px; width: 100%; max-width: 420px; justify-content: center; }
 		.toggle-zone button { flex: 1; font-size: 0.85rem; padding: 6px; }
 		.toggle-zone button.active { background: #4af; color: #000; font-weight: bold; border-color: #4af; }
@@ -132,6 +148,7 @@
 
 	<div class="title-row">
 		<h3 data-i18n="title">SIRDS Stereogram Generator</h3>
+		<span id="backendBadge" class="backend-badge"></span>
 		<div class="hint" data-i18n="hint">Look at the two gray dots below the image and look "through" the image to see the 3D picture.</div>
 		<div class="hint" data-i18n="hintDrag">Drag the image: left/right tunes the period, up/down tunes the depth. Drag the dots to set the period.</div>
 	</div>
@@ -220,6 +237,14 @@
 				<input type="range" id="noiseVy" min="-8" max="8" step="0.1" value="0">
 				<div class="val-display" id="noiseVyVal">0.0 px/frame</div>
 			</div>
+			<div class="control-group">
+				<label for="renderBackend" data-i18n="lblBackend">Renderer:</label>
+				<select id="renderBackend">
+					<option value="auto" data-i18n="optAuto">Auto</option>
+					<option value="webgl2" data-i18n="optWebGL2">WebGL2</option>
+					<option value="cpu" data-i18n="optCPU">CPU</option>
+				</select>
+			</div>
 			<button class="generate-btn" id="renderBtn" data-i18n="btnRender">Generate Stereogram</button>
 		</div>
 
@@ -231,6 +256,7 @@
 
 			<div class="canvas-wrapper">
 				<canvas id="mainCanvas" width="700" height="450"></canvas>
+				<canvas id="glCanvas" width="700" height="450"></canvas>
 				<canvas id="guideCanvas" class="guide-canvas" width="700" height="450"></canvas>
 			</div>
 		</div>
@@ -258,10 +284,48 @@
 		// Canvas ImageData is little-endian RGBA, so one Uint32 store replaces four byte stores.
 		function packRGBA(r, g, b) { return (0xff000000 | (b << 16) | (g << 8) | r) >>> 0; }
 
-		// Deterministic hash PRNG. Stable mode keeps frame at zero; unstable mode evolves it.
+		// Integer mixers. The fragment shader repeats these literals; experiments/gl-parity.js
+		// fails if they drift. Sin-hash is not reproducible across CPU and GPU.
+		const HASH_K = [0x9E3779B1, 0x85EBCA77, 0xC2B2AE3D, 0x27D4EB2F, 0x165667B1, 0x7FEB352D, 0x846CA68B];
+		const HASH_BIAS = 0x40000000;	// grain coords stay non-negative, so uint(int) is a plain cast
+		const TENTHS_LIM = 2000000000;	// keeps (10*x - tenths) inside int32 for any canvas we can texture
+
+		function uadd(a, b) { return (a + b) >>> 0; }
+		function umul(a, b) { return Math.imul(a, b) >>> 0; }
+
+		function hashU32(x, y, c, frame) {
+			x = (x + HASH_BIAS) | 0;
+			y = (y + HASH_BIAS) | 0;
+			let h = umul(x, HASH_K[0]);
+			h = uadd(h, umul(y, HASH_K[1]));
+			h = uadd(h, umul(c, HASH_K[2]));
+			h = uadd(h, umul(frame, HASH_K[3]));
+			h = uadd(h, umul(SEED, HASH_K[4]));
+			h = umul(h ^ (h >>> 16), HASH_K[5]);
+			h = umul(h ^ (h >>> 15), HASH_K[6]);
+			return (h ^ (h >>> 16)) >>> 0;
+		}
+
 		function hashNoise(x, y, channel, frame) {
-			const h = Math.sin(x * 12.9898 + y * 78.233 + channel * 37.719 + SEED * 11.17 + frame * 19.19) * 43758.5453123;
-			return h - Math.floor(h);
+			return hashU32(x, y, channel, frame) / 4294967296;
+		}
+
+		// Pan is stored in tenths of a pixel so white/color grain matches the shader exactly.
+		// Slider steps are 0.1 px; float32 and float64 would disagree at cell edges.
+		function tenthsOf(move) {
+			let t = Math.round(move * 10);
+			if (t > TENTHS_LIM) return TENTHS_LIM;
+			if (t < -TENTHS_LIM) return -TENTHS_LIM;
+			return t | 0;
+		}
+
+		function floorDiv(n, d) {
+			if (n >= 0) return (n / d) | 0;
+			return -(((-n + d - 1) / d) | 0);
+		}
+
+		function grainOrigin(x, moveT, g) {
+			return floorDiv(x * 10 - moveT, g * 10) * g;
 		}
 
 		// Compact, seeded 3D simplex noise (smooth coherent noise with an animated Z axis).
@@ -329,25 +393,24 @@
 		}
 
 		// Packed RGBA of the tiling texture at screen position (x, y), for the current PAT state.
+		// White/color use integer tenths so the GPU shader can match them byte for byte.
+		// Simplex/stripe stay on the continuous pan; those two are allowed a GPU tolerance.
 		function texel(x, y) {
+			const g = PAT.grain;
+			if (PAT.type === PATTERN_WHITE || PAT.type === PATTERN_COLOR) {
+				const nx = grainOrigin(x, tenthsOf(PAT.moveX), g);
+				const ny = grainOrigin(y, tenthsOf(PAT.moveY), g);
+				if (PAT.type === PATTERN_WHITE) {
+					const v = hashU32(nx, ny, 0, PAT.frame) >>> 31 ? 255 : 0;
+					return packRGBA(v, v, v);
+				}
+				return packRGBA(
+					hashU32(nx, ny, 0, PAT.frame) >>> 24,
+					hashU32(nx, ny, 1, PAT.frame) >>> 24,
+					hashU32(nx, ny, 2, PAT.frame) >>> 24);
+			}
 			const sx = x - PAT.moveX;
 			const sy = y - PAT.moveY;
-			const g = PAT.grain;
-			// Grain is quantized after the pan offset, so a stable seed drifts as one
-			// persistent pattern instead of being regenerated every frame.
-			const nx = Math.floor(sx / g) * g;
-			const ny = Math.floor(sy / g) * g;
-
-			if (PAT.type === PATTERN_WHITE) {
-				const v = hashNoise(nx, ny, 0, PAT.frame) > 0.5 ? 255 : 0;
-				return packRGBA(v, v, v);
-			}
-			if (PAT.type === PATTERN_COLOR) {
-				return packRGBA(
-					(hashNoise(nx, ny, 0, PAT.frame) * 256) | 0,
-					(hashNoise(nx, ny, 1, PAT.frame) * 256) | 0,
-					(hashNoise(nx, ny, 2, PAT.frame) * 256) | 0);
-			}
 			if (PAT.type === PATTERN_SIMPLEX) {
 				const n = simplex3(sx / (g * 18), sy / (g * 18), PAT.timeZ);
 				const v = clamp((n * 0.5 + 0.5) * 255, 0, 255) | 0;
@@ -496,10 +559,157 @@
 		}
 
 		if (typeof module !== 'undefined' && module.exports) {
-			module.exports = { SEED, MIN_SHIFT, HSR_EPS, PAT, clamp, periodAt, packRGBA, hashNoise, simplex3, texel, linkRow,
+			module.exports = { SEED, MIN_SHIFT, HSR_EPS, HASH_K, HASH_BIAS, TENTHS_LIM, PAT, clamp, periodAt, packRGBA,
+				hashU32, hashNoise, tenthsOf, floorDiv, grainOrigin, simplex3, simplexPerm, simplexGrad3, texel, linkRow,
 				fillShapes, fillTorus, fillHeart, fillRipples, fillPyramid, postProcessDepth };
 		}
 		// <<< gf-core end
+
+		// Rollback: false keeps the CPU renderer only. The GPU path is additive.
+		const USE_WEBGL2 = true;
+
+		// >>> gf-shader start — must match hashU32 / grainOrigin / texel. gl-parity.js extracts this.
+		const VERT_SRC = `#version 300 es
+void main() {
+	vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+	gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}
+`;
+		const FRAG_SRC = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp isampler2D;
+precision highp usampler2D;
+
+uniform isampler2D uLinks;
+uniform usampler2D uPerm;
+uniform int uPattern;
+uniform int uGrain;
+uniform int uFrame;
+uniform int uMoveXT;
+uniform int uMoveYT;
+uniform float uMoveX;
+uniform float uMoveY;
+uniform float uTimeZ;
+uniform int uH;
+
+out vec4 oColor;
+
+const int SEED = 1;
+const int HASH_BIAS = 0x40000000;
+const int GRAD[36] = int[36](
+	1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1, 0,
+	1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, -1,
+	0, 1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1
+);
+
+int perm(int i) {
+	return int(texelFetch(uPerm, ivec2(i, 0), 0).r);
+}
+
+int floorDiv(int n, int d) {
+	if (n >= 0) return n / d;
+	return -((-n + d - 1) / d);
+}
+
+int grainOrigin(int x, int moveT, int g) {
+	return floorDiv(x * 10 - moveT, g * 10) * g;
+}
+
+uint hashU32(int x, int y, int c, int frame) {
+	x += HASH_BIAS;
+	y += HASH_BIAS;
+	uint h = uint(x) * 0x9E3779B1u;
+	h += uint(y) * 0x85EBCA77u;
+	h += uint(c) * 0xC2B2AE3Du;
+	h += uint(frame) * 0x27D4EB2Fu;
+	h += uint(SEED) * 0x165667B1u;
+	h = (h ^ (h >> 16u)) * 0x7FEB352Du;
+	h = (h ^ (h >> 15u)) * 0x846CA68Bu;
+	return h ^ (h >> 16u);
+}
+
+vec4 fromBytes(int r, int g, int b) {
+	return vec4(float(r), float(g), float(b), 255.0) / 255.0;
+}
+
+float simplexCorner(float x, float y, float z, int gi) {
+	float tt = 0.6 - x * x - y * y - z * z;
+	if (tt < 0.0) return 0.0;
+	int g = (gi % 12) * 3;
+	tt *= tt;
+	return tt * tt * (float(GRAD[g]) * x + float(GRAD[g + 1]) * y + float(GRAD[g + 2]) * z);
+}
+
+float simplex3(float xin, float yin, float zin) {
+	const float F3 = 1.0 / 3.0;
+	const float G3 = 1.0 / 6.0;
+	float s = (xin + yin + zin) * F3;
+	int i = int(floor(xin + s));
+	int j = int(floor(yin + s));
+	int k = int(floor(zin + s));
+	float t = float(i + j + k) * G3;
+	float x0 = xin - (float(i) - t);
+	float y0 = yin - (float(j) - t);
+	float z0 = zin - (float(k) - t);
+	int i1 = 0, j1 = 0, k1 = 0, i2 = 0, j2 = 0, k2 = 0;
+	if (x0 >= y0) {
+		if (y0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 1; k2 = 0; }
+		else if (x0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 0; k2 = 1; }
+		else { i1 = 0; j1 = 0; k1 = 1; i2 = 1; j2 = 0; k2 = 1; }
+	} else {
+		if (y0 < z0) { i1 = 0; j1 = 0; k1 = 1; i2 = 0; j2 = 1; k2 = 1; }
+		else if (x0 < z0) { i1 = 0; j1 = 1; k1 = 0; i2 = 0; j2 = 1; k2 = 1; }
+		else { i1 = 0; j1 = 1; k1 = 0; i2 = 1; j2 = 1; k2 = 0; }
+	}
+	float x1 = x0 - float(i1) + G3, y1 = y0 - float(j1) + G3, z1 = z0 - float(k1) + G3;
+	float x2 = x0 - float(i2) + 2.0 * G3, y2 = y0 - float(j2) + 2.0 * G3, z2 = z0 - float(k2) + 2.0 * G3;
+	float x3 = x0 - 1.0 + 3.0 * G3, y3 = y0 - 1.0 + 3.0 * G3, z3 = z0 - 1.0 + 3.0 * G3;
+	int ii = i & 255, jj = j & 255, kk = k & 255;
+	int gi0 = perm(ii + perm(jj + perm(kk)));
+	int gi1 = perm(ii + i1 + perm(jj + j1 + perm(kk + k1)));
+	int gi2 = perm(ii + i2 + perm(jj + j2 + perm(kk + k2)));
+	int gi3 = perm(ii + 1 + perm(jj + 1 + perm(kk + 1)));
+	return 32.0 * (
+		simplexCorner(x0, y0, z0, gi0) + simplexCorner(x1, y1, z1, gi1) +
+		simplexCorner(x2, y2, z2, gi2) + simplexCorner(x3, y3, z3, gi3));
+}
+
+void main() {
+	oColor = vec4(0.0);
+	int x = int(gl_FragCoord.x);
+	// array row 0 is the top of the image and texture y = 0; window y = 0 is the bottom
+	int y = uH - 1 - int(gl_FragCoord.y);
+	int root = texelFetch(uLinks, ivec2(x, y), 0).r;
+	int g = uGrain;
+	if (uPattern <= 1) {
+		int nx = grainOrigin(root, uMoveXT, g);
+		int ny = grainOrigin(y, uMoveYT, g);
+		if (uPattern == 0) {
+			int v = (hashU32(nx, ny, 0, uFrame) >> 31u) == 1u ? 255 : 0;
+			oColor = fromBytes(v, v, v);
+			return;
+		}
+		oColor = fromBytes(
+			int(hashU32(nx, ny, 0, uFrame) >> 24u),
+			int(hashU32(nx, ny, 1, uFrame) >> 24u),
+			int(hashU32(nx, ny, 2, uFrame) >> 24u));
+		return;
+	}
+	float sx = float(root) - uMoveX;
+	float sy = float(y) - uMoveY;
+	if (uPattern == 2) {
+		float n = simplex3(sx / (float(g) * 18.0), sy / (float(g) * 18.0), uTimeZ);
+		int v = int(clamp((n * 0.5 + 0.5) * 255.0, 0.0, 255.0));
+		oColor = fromBytes(v, v, v);
+		return;
+	}
+	int v = int((sin(sx * 0.15 + uTimeZ * 12.0) + 1.0) * 127.0);
+	int yb = int(floor(sy));
+	oColor = fromBytes((v + (yb % 30) * 4) & 255, v, 255 - v);
+}
+`;
+		// <<< gf-shader end
 
 		// --- I18N: flat table [en, ru, cn, jp] ---
 		const LANGS = ['en', 'ru', 'cn', 'jp'];
@@ -542,6 +752,12 @@
 			lblStableNoise: ['Stable noise (same seed)', 'Стабильный шум (тот же seed)', '稳定噪声（相同种子）', '安定ノイズ（同じシード）'],
 			lblNoiseVx: ['Noise move speed X:', 'Скорость движения шума X:', '噪声移动速度 X：', 'ノイズ移動速度 X：'],
 			lblNoiseVy: ['Noise move speed Y:', 'Скорость движения шума Y:', '噪声移动速度 Y：', 'ノイズ移動速度 Y：'],
+			lblBackend: ['Renderer:', 'Рендерер:', '渲染器：', 'レンダラー：'],
+			optAuto: ['Auto', 'Авто', '自动', '自動'],
+			optWebGL2: ['WebGL2', 'WebGL2', 'WebGL2', 'WebGL2'],
+			optCPU: ['CPU', 'CPU', 'CPU', 'CPU'],
+			badgeWebGL2: ['WebGL2', 'WebGL2', 'WebGL2', 'WebGL2'],
+			badgeCPU: ['CPU (fallback)', 'CPU (резервный)', 'CPU（回退）', 'CPU（フォールバック）'],
 			btnRender: ['Generate Stereogram', 'Сгенерировать Стереограмму', '生成立体图', 'ステレオグラムを生成'],
 			btnStereo: ['Stereogram', 'Готовая Стереограмма', '立体图', 'ステレオグラム'],
 			btnDepth: ['Show Depth Map', 'Показать Карту Глубин', '显示深度图', '深度マップを表示'],
@@ -564,6 +780,7 @@
 			langBarEl.setAttribute('aria-label', t('langBar'));
 			document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
 			for (const btn of langBarEl.children) btn.classList.toggle('active', btn.dataset.code === lang);
+			paintBadge();
 		}
 
 		function setLang(code) {
@@ -586,8 +803,10 @@
 		// --- DOM ---
 		const canvas = document.getElementById('mainCanvas');
 		const ctx = canvas.getContext('2d');
+		const glCanvas = document.getElementById('glCanvas');
 		const guideCanvas = document.getElementById('guideCanvas');
 		const guideCtx = guideCanvas.getContext('2d');
+		const backendBadge = document.getElementById('backendBadge');
 
 		const depthPreset = document.getElementById('depthPreset');
 		const depthTextInput = document.getElementById('depthText');
@@ -601,6 +820,7 @@
 		const noiseScaleInput = document.getElementById('noiseScale');
 		const noiseVxInput = document.getElementById('noiseVx');
 		const noiseVyInput = document.getElementById('noiseVy');
+		const renderBackend = document.getElementById('renderBackend');
 		const renderBtn = document.getElementById('renderBtn');
 		const showStereoBtn = document.getElementById('showStereoBtn');
 		const showDepthBtn = document.getElementById('showDepthBtn');
@@ -613,6 +833,12 @@
 		let isAnimating = true;
 		let currentMode = 'stereo';	// 'stereo' | 'depth'
 		let linksDirty = true;
+		let glRenderer = null;
+		let glCompileFailed = false;
+		let glTooBig = false;
+		let active = null;
+		let avgMs = -1;
+		let badgeAt = 0;
 
 		// --- buffers: allocated on resize only, mutated in place per frame ---
 		let depthF32 = null;	// 0..1 depth, the single source of truth
@@ -625,14 +851,16 @@
 			if (!depthF32 || depthF32.length !== n) {
 				depthF32 = new Float32Array(n);
 				linkI32 = new Int32Array(n);
+				linksDirty = true;
 			}
 			if (!hsrLeftZ || hsrLeftZ.length !== w) {
 				hsrLeftZ = new Float32Array(w);
 				hsrRightZ = new Float32Array(w);
+				linksDirty = true;
 			}
 			if (!outImg || outImg.width !== w || outImg.height !== h) {
 				outImg = ctx.createImageData(w, h);
-				outU32 = new Uint32Array(outImg.data.buffer);
+				outU32 = new Uint32Array(outImg.data.buffer, outImg.data.byteOffset, w * h);
 			}
 		}
 
@@ -678,6 +906,272 @@
 			linksDirty = true;
 		}
 
+		// --- renderers: one interface, CPU is the reference, WebGL2 is the gather ---
+		// false blanks a static stereogram: the drawing buffer is cleared after composite.
+		const GL_ATTRS = {
+			alpha: false, antialias: false, depth: false, stencil: false,
+			preserveDrawingBuffer: true, powerPreference: 'high-performance'
+		};
+
+		function attachTimer(gl) {
+			const none = { supported: false, begin() { return false; }, end() {}, poll() { return -1; } };
+			const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+			if (!ext) return none;
+			const slots = [];
+			for (let i = 0; i < 4; i++) {
+				const q = gl.createQuery();
+				if (!q) return none;
+				slots.push(q);
+			}
+			const n = slots.length;
+			let write = 0, read = 0, pending = 0;
+			return {
+				supported: true,
+				begin() {
+					if (pending === n) return false;
+					gl.beginQuery(ext.TIME_ELAPSED_EXT, slots[write]);
+					return true;
+				},
+				end(started) {
+					if (!started) return;
+					gl.endQuery(ext.TIME_ELAPSED_EXT);
+					write = (write + 1) % n;
+					pending++;
+				},
+				poll() {
+					const disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT);
+					let fresh = -1;
+					while (pending && gl.getQueryParameter(slots[read], gl.QUERY_RESULT_AVAILABLE)) {
+						const ns = gl.getQueryParameter(slots[read], gl.QUERY_RESULT);
+						if (!disjoint) fresh = ns / 1e6;
+						read = (read + 1) % n;
+						pending--;
+					}
+					return fresh;
+				}
+			};
+		}
+
+		function bindNearest(gl, tex) {
+			gl.bindTexture(gl.TEXTURE_2D, tex);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 0);
+		}
+
+		function createGLRenderer(target) {
+			let gl = null;
+			try { gl = target.getContext('webgl2', GL_ATTRS); }
+			catch (err) { return null; }
+			if (!gl || typeof gl.createShader !== 'function' || typeof gl.drawArrays !== 'function') return null;
+
+			function compile(type, src, label) {
+				const shader = gl.createShader(type);
+				gl.shaderSource(shader, src);
+				gl.compileShader(shader);
+				if (gl.getShaderParameter(shader, gl.COMPILE_STATUS)) return shader;
+				console.error('SIRDS WebGL2 ' + label + ':', gl.getShaderInfoLog(shader));
+				glCompileFailed = true;
+				return null;
+			}
+
+			const vs = compile(gl.VERTEX_SHADER, VERT_SRC, 'vertex');
+			const fs = vs && compile(gl.FRAGMENT_SHADER, FRAG_SRC, 'fragment');
+			if (!fs) return null;
+			const prog = gl.createProgram();
+			gl.attachShader(prog, vs);
+			gl.attachShader(prog, fs);
+			gl.linkProgram(prog);
+			gl.deleteShader(vs);
+			gl.deleteShader(fs);
+			if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+				console.error('SIRDS WebGL2 link:', gl.getProgramInfoLog(prog));
+				glCompileFailed = true;
+				return null;
+			}
+
+			const loc = {
+				pattern: gl.getUniformLocation(prog, 'uPattern'),
+				grain: gl.getUniformLocation(prog, 'uGrain'),
+				frame: gl.getUniformLocation(prog, 'uFrame'),
+				moveXT: gl.getUniformLocation(prog, 'uMoveXT'),
+				moveYT: gl.getUniformLocation(prog, 'uMoveYT'),
+				moveX: gl.getUniformLocation(prog, 'uMoveX'),
+				moveY: gl.getUniformLocation(prog, 'uMoveY'),
+				timeZ: gl.getUniformLocation(prog, 'uTimeZ'),
+				h: gl.getUniformLocation(prog, 'uH'),
+				links: gl.getUniformLocation(prog, 'uLinks'),
+				perm: gl.getUniformLocation(prog, 'uPerm')
+			};
+
+			while (gl.getError() !== gl.NO_ERROR) {}
+			gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+			const vao = gl.createVertexArray();
+			gl.bindVertexArray(vao);
+			gl.activeTexture(gl.TEXTURE1);
+			const permTex = gl.createTexture();
+			bindNearest(gl, permTex);
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8UI, 512, 1, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, simplexPerm);
+			gl.activeTexture(gl.TEXTURE0);
+			const linkTex = gl.createTexture();
+			bindNearest(gl, linkTex);
+			gl.useProgram(prog);
+			gl.uniform1i(loc.links, 0);
+			gl.uniform1i(loc.perm, 1);
+			if (gl.getError() !== gl.NO_ERROR) {
+				glCompileFailed = true;
+				return null;
+			}
+
+			const timer = attachTimer(gl);
+			let texW = 0, texH = 0, last = -1;
+			return {
+				kind: 'webgl2',
+				gpuTimer: timer.supported,
+				// row 0 of linkI32 is the top row; leave UNPACK_FLIP_Y off so texture y = 0 matches it
+				uploadLinks(src, w, h) {
+					while (gl.getError() !== gl.NO_ERROR) {}
+					const max = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+					if (w < 1 || h < 1 || w > max || h > max) return false;
+					gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, linkTex);
+					if (w !== texW || h !== texH) {
+						gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32I, w, h, 0, gl.RED_INTEGER, gl.INT, src);
+						texW = w;
+						texH = h;
+					} else {
+						gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, w, h, gl.RED_INTEGER, gl.INT, src);
+					}
+					return gl.getError() === gl.NO_ERROR;
+				},
+				render(pat, w, h) {
+					if (gl.drawingBufferWidth !== w || gl.drawingBufferHeight !== h) return false;
+					const t0 = performance.now();
+					const timing = timer.begin();
+					gl.viewport(0, 0, w, h);
+					gl.useProgram(prog);
+					gl.uniform1i(loc.pattern, pat.type);
+					gl.uniform1i(loc.grain, pat.grain);
+					gl.uniform1i(loc.frame, pat.frame | 0);
+					gl.uniform1i(loc.moveXT, tenthsOf(pat.moveX));
+					gl.uniform1i(loc.moveYT, tenthsOf(pat.moveY));
+					gl.uniform1f(loc.moveX, pat.moveX);
+					gl.uniform1f(loc.moveY, pat.moveY);
+					gl.uniform1f(loc.timeZ, pat.timeZ);
+					gl.uniform1i(loc.h, h);
+					gl.drawArrays(gl.TRIANGLES, 0, 3);
+					timer.end(timing);
+					if (!timer.supported) last = performance.now() - t0;
+					return true;
+				},
+				takeSample() {
+					const gpu = timer.poll();
+					if (gpu < 0) return -1;
+					last = gpu;
+					return gpu;
+				},
+				dispose() {
+					const lose = gl.getExtension('WEBGL_lose_context');
+					if (lose) lose.loseContext();
+				},
+				lastMs() { return last; }
+			};
+		}
+
+		function createCpuRenderer() {
+			let last = -1;
+			return {
+				kind: 'cpu',
+				gpuTimer: false,
+				uploadLinks() { return true; },
+				render(pat, w, h) {
+					const t0 = performance.now();
+					// links[x] <= x, so the source pixel is already written: one gather, no allocations
+					for (let y = 0; y < h; y++) {
+						const o = y * w;
+						for (let x = 0; x < w; x++) {
+							const r = linkI32[o + x];
+							outU32[o + x] = r === x ? texel(x, y) : outU32[o + r];
+						}
+					}
+					ctx.putImageData(outImg, 0, 0);
+					last = performance.now() - t0;
+					return true;
+				},
+				takeSample() { return -1; },
+				dispose() {},
+				lastMs() { return last; }
+			};
+		}
+
+		const cpuRenderer = createCpuRenderer();
+		active = cpuRenderer;
+
+		// Plan entry point. `target` is the WebGL canvas; the CPU renderer draws the 2d canvas.
+		function createSirdsRenderer(target) {
+			if (!USE_WEBGL2 || renderBackend.value === 'cpu' || glCompileFailed || glTooBig) return cpuRenderer;
+			if (glRenderer) return glRenderer;
+			glRenderer = createGLRenderer(target);
+			return glRenderer || cpuRenderer;
+		}
+
+		function syncView() {
+			if (!active) return;
+			const glOn = active.kind === 'webgl2' && currentMode === 'stereo';
+			glCanvas.style.visibility = glOn ? 'visible' : 'hidden';
+			// opacity, not visibility: the 2d canvas must keep receiving the drag
+			canvas.style.opacity = glOn ? '0' : '1';
+		}
+
+		function badgeKey() {
+			if (active && active.kind === 'webgl2') return 'badgeWebGL2';
+			if (renderBackend.value === 'cpu') return 'optCPU';
+			return 'badgeCPU';
+		}
+
+		function paintBadge() {
+			if (!backendBadge || !active) return;
+			let text = t(badgeKey());
+			if (active.kind === 'webgl2') text = '⚡ ' + text;
+			if (avgMs >= 0) text += ' · ' + avgMs.toFixed(1) + ' ms';
+			backendBadge.textContent = text;
+			backendBadge.classList.toggle('is-cpu', active.kind !== 'webgl2');
+		}
+
+		function noteFrameMs(ms) {
+			if (!(ms >= 0)) return;
+			avgMs = avgMs < 0 ? ms : avgMs * 0.85 + ms * 0.15;
+			const now = performance.now();
+			if (now - badgeAt < 250) return;
+			badgeAt = now;
+			paintBadge();
+		}
+
+		function dropToCpu() {
+			active = cpuRenderer;
+			syncView();
+			paintBadge();
+		}
+
+		function selectBackend() {
+			const prev = active ? active.kind : '';
+			const v = renderBackend.value;
+			if (v !== 'auto' && v !== 'webgl2' && v !== 'cpu') renderBackend.value = 'auto';
+			active = createSirdsRenderer(glCanvas);
+			if (active.kind !== prev) avgMs = -1;
+			if (active.kind === 'webgl2' && linkI32 && !linksDirty) {
+				if (!active.uploadLinks(linkI32, canvas.width, canvas.height)) {
+					glTooBig = true;
+					dropToCpu();
+					return;
+				}
+			}
+			syncView();
+			paintBadge();
+		}
+
 		function buildLinks() {
 			const w = canvas.width, h = canvas.height;
 			const period = parseInt(patternWidthInput.value);
@@ -685,31 +1179,38 @@
 			const useHsr = hsrToggle.checked;
 			for (let y = 0; y < h; y++) linkRow(depthF32, linkI32, y * w, w, period, depthScale, useHsr, hsrLeftZ, hsrRightZ);
 			linksDirty = false;
+			if (active.kind !== 'webgl2') return;
+			if (active.uploadLinks(linkI32, w, h)) return;
+			glTooBig = true;
+			dropToCpu();
+		}
+
+		function syncPAT() {
+			PAT.type = PATTERN_IDS[patternType.value];
+			PAT.grain = Math.max(1, parseInt(noiseScaleInput.value) || 1);
+			PAT.moveX = animFrame * parseFloat(noiseVxInput.value);
+			PAT.moveY = animFrame * parseFloat(noiseVyInput.value);
+			const stable = stableNoiseToggle.checked;
+			PAT.timeZ = stable ? 0 : animFrame * 0.045;
+			PAT.frame = stable ? 0 : animFrame;
 		}
 
 		// --- render ---
 		function renderSirds() {
 			const w = canvas.width, h = canvas.height;
 			if (linksDirty) buildLinks();
-
-			PAT.type = PATTERN_IDS[patternType.value];
-			PAT.grain = parseInt(noiseScaleInput.value);
-			PAT.moveX = animFrame * parseFloat(noiseVxInput.value);
-			PAT.moveY = animFrame * parseFloat(noiseVyInput.value);
-			const stable = stableNoiseToggle.checked;
-			PAT.timeZ = stable ? 0 : animFrame * 0.045;
-			PAT.frame = stable ? 0 : animFrame;
-
-			// links[x] is the leftmost index of the group, so the source pixel is always already
-			// written: one gather pass, zero allocations.
-			for (let y = 0; y < h; y++) {
-				const o = y * w;
-				for (let x = 0; x < w; x++) {
-					const r = linkI32[o + x];
-					outU32[o + x] = r === x ? texel(x, y) : outU32[o + r];
+			syncPAT();
+			if (active.kind === 'webgl2') {
+				if (!active.render(PAT, w, h)) {
+					glTooBig = true;
+					dropToCpu();
+				} else {
+					if (!active.gpuTimer) noteFrameMs(active.lastMs());
+					return;
 				}
 			}
-			ctx.putImageData(outImg, 0, 0);
+			cpuRenderer.render(PAT, w, h);
+			noteFrameMs(cpuRenderer.lastMs());
 		}
 
 		function renderDepthView() {
@@ -883,6 +1384,7 @@
 			currentMode = mode;
 			showStereoBtn.classList.toggle('active', mode === 'stereo');
 			showDepthBtn.classList.toggle('active', mode === 'depth');
+			syncView();
 		}
 
 		const CONTROL_ACTIONS = [
@@ -898,6 +1400,7 @@
 			[noiseVxInput, 'input', refreshFrame],
 			[noiseVyInput, 'input', refreshFrame],
 			[stableNoiseToggle, 'change', refreshFrame],
+			[renderBackend, 'change', () => { glTooBig = false; selectBackend(); refreshFrame(); }],
 			[renderBtn, 'click', () => { setMode('stereo'); refreshDepth(); }],
 			[showStereoBtn, 'click', () => { setMode('stereo'); refreshFrame(); }],
 			[showDepthBtn, 'click', () => { setMode('depth'); refreshFrame(); }],
@@ -914,6 +1417,10 @@
 
 		function animationLoop() {
 			requestAnimationFrame(animationLoop);
+			if (active && active.kind === 'webgl2') {
+				const sample = active.takeSample();
+				if (sample >= 0) noteFrameMs(sample);
+			}
 			if (!isAnimating || currentMode !== 'stereo' || animationIsStatic()) return;
 			animFrame++;
 			renderSirds();
@@ -936,6 +1443,7 @@
 				noiseVy: noiseVyInput.value,
 				isAnimating: animToggle.checked,
 				currentMode: currentMode,
+				backend: renderBackend.value,
 				lang: lang
 			}));
 		}
@@ -957,6 +1465,7 @@
 			if (s.noiseVx !== undefined) noiseVxInput.value = s.noiseVx;
 			if (s.noiseVy !== undefined) noiseVyInput.value = s.noiseVy;
 			if (typeof s.isAnimating === 'boolean') animToggle.checked = s.isAnimating;
+			if (s.backend === 'auto' || s.backend === 'webgl2' || s.backend === 'cpu') renderBackend.value = s.backend;
 			if (LANGS.indexOf(s.lang) >= 0) lang = s.lang;
 			isAnimating = animToggle.checked;
 			setMode(s.currentMode === 'depth' ? 'depth' : 'stereo');
@@ -968,18 +1477,35 @@
 			const wrapper = canvas.parentElement;
 			const w = wrapper.clientWidth, h = wrapper.clientHeight;
 			if (w <= 0 || h <= 0) return;
-			if (canvas.width === w && canvas.height === h) return;
+			if (canvas.width === w && canvas.height === h && glCanvas.width === w && glCanvas.height === h) return;
 			canvas.width = w;
 			canvas.height = h;
 			guideCanvas.width = w;
 			guideCanvas.height = h;
+			glCanvas.width = w;
+			glCanvas.height = h;
 			ensureBuffers(w, h);
+			glTooBig = false;
+			selectBackend();
 			refreshDepth();
 		}
 
+		glCanvas.addEventListener('webglcontextlost', e => {
+			e.preventDefault();
+			glRenderer = null;
+			glCompileFailed = false;
+			if (active && active.kind === 'webgl2') dropToCpu();
+			if (currentMode === 'stereo') refreshFrame();
+		});
+		glCanvas.addEventListener('webglcontextrestored', () => {
+			selectBackend();
+			refreshFrame();
+		});
+
 		loadSettings();
-		applyLang();
 		ensureBuffers(canvas.width, canvas.height);
+		selectBackend();
+		applyLang();
 		refreshDepth();
 
 		new ResizeObserver(resizeCanvas).observe(canvas.parentElement);

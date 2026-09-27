@@ -6,7 +6,7 @@ const path = require('path');
 const GF_PATH = path.join(__dirname, '..', 'gf.html');
 const START = '// >>> gf-core start';
 const END = '// <<< gf-core end';
-const EXPORTS = 'SEED, MIN_SHIFT, HSR_EPS, PAT, PATTERN_WHITE, PATTERN_COLOR, PATTERN_SIMPLEX, PATTERN_STRIPE, clamp, periodAt, packRGBA, hashNoise, simplex3, texel, linkRow, fillShapes, fillTorus, fillHeart, fillRipples, fillPyramid, postProcessDepth';
+const EXPORTS = 'SEED, MIN_SHIFT, HSR_EPS, HASH_K, HASH_BIAS, TENTHS_LIM, PAT, PATTERN_WHITE, PATTERN_COLOR, PATTERN_SIMPLEX, PATTERN_STRIPE, clamp, periodAt, packRGBA, hashU32, hashNoise, tenthsOf, floorDiv, grainOrigin, simplex3, simplexPerm, simplexGrad3, texel, linkRow, fillShapes, fillTorus, fillHeart, fillRipples, fillPyramid, postProcessDepth';
 
 function loadCore() {
 	const html = fs.readFileSync(GF_PATH, 'utf8');
