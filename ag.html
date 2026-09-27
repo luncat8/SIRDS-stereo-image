@@ -1,0 +1,2036 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>SIRDS Stereo Image Maker &bull; Ultimate UI Suite</title>
+	<style>
+		:root {
+			--bg-main: #0f172a;
+			--bg-panel: #1e293b;
+			--bg-input: #334155;
+			--text-main: #f8fafc;
+			--text-muted: #94a3b8;
+			--accent: #6366f1;
+			--accent-hover: #4f46e5;
+			--accent-active: #4338ca;
+			--border: #334155;
+			--border-hover: #475569;
+			--radius: 8px;
+		}
+
+		* {
+			box-sizing: border-box;
+			margin: 0;
+			padding: 0;
+		}
+
+		body {
+			font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+			background-color: var(--bg-main);
+			color: var(--text-main);
+			min-height: 100vh;
+			display: flex;
+			flex-direction: column;
+		}
+
+		header {
+			background-color: var(--bg-panel);
+			border-bottom: 1px solid var(--border);
+			padding: 12px 24px;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			flex-wrap: wrap;
+			gap: 12px;
+		}
+
+		header h1 {
+			font-size: 1.25rem;
+			font-weight: 700;
+			background: linear-gradient(135deg, #818cf8, #38bdf8);
+			-webkit-background-clip: text;
+			-webkit-text-fill-color: transparent;
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+
+		.badge {
+			font-size: 0.75rem;
+			background-color: #38bdf822;
+			color: #38bdf8;
+			border: 1px solid #38bdf844;
+			padding: 2px 6px;
+			border-radius: 4px;
+			font-weight: 600;
+		}
+
+		.app-container {
+			display: flex;
+			flex: 1;
+			overflow: hidden;
+			position: relative;
+		}
+
+		.sidebar {
+			width: 380px;
+			background-color: var(--bg-panel);
+			border-right: 1px solid var(--border);
+			display: flex;
+			flex-direction: column;
+			z-index: 10;
+		}
+
+		.tabs {
+			display: flex;
+			border-bottom: 1px solid var(--border);
+			background-color: var(--bg-main);
+		}
+
+		.tab-btn {
+			flex: 1;
+			padding: 12px 6px;
+			background: none;
+			border: none;
+			color: var(--text-muted);
+			font-size: 0.8rem;
+			font-weight: 600;
+			cursor: pointer;
+			transition: all 0.2s;
+			border-bottom: 2px solid transparent;
+		}
+
+		.tab-btn:hover {
+			color: var(--text-main);
+			background-color: rgba(255, 255, 255, 0.02);
+		}
+
+		.tab-btn.active {
+			color: var(--accent);
+			border-bottom-color: var(--accent);
+			background-color: var(--bg-panel);
+		}
+
+		.tab-content {
+			display: none;
+			flex: 1;
+			overflow-y: auto;
+			padding: 20px;
+		}
+
+		.tab-content.active {
+			display: flex;
+			flex-direction: column;
+			gap: 20px;
+		}
+
+		.control-group {
+			background-color: rgba(255, 255, 255, 0.02);
+			border: 1px solid var(--border);
+			border-radius: var(--radius);
+			padding: 16px;
+			display: flex;
+			flex-direction: column;
+			gap: 12px;
+		}
+
+		.control-group-title {
+			font-size: 0.85rem;
+			font-weight: 700;
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+			color: var(--accent);
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+		}
+
+		.control-row {
+			display: flex;
+			flex-direction: column;
+			gap: 6px;
+		}
+
+		.control-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+		}
+
+		label {
+			font-size: 0.85rem;
+			font-weight: 500;
+		}
+
+		.value-display {
+			font-size: 0.8rem;
+			font-family: monospace;
+			color: var(--text-muted);
+			background-color: var(--bg-input);
+			padding: 2px 6px;
+			border-radius: 4px;
+		}
+
+		input[type="range"] {
+			-webkit-appearance: none;
+			width: 100%;
+			height: 6px;
+			background: var(--bg-input);
+			border-radius: 3px;
+			outline: none;
+		}
+
+		input[type="range"]::-webkit-slider-thumb {
+			-webkit-appearance: none;
+			appearance: none;
+			width: 16px;
+			height: 16px;
+			border-radius: 50%;
+			background: var(--accent);
+			cursor: pointer;
+			transition: transform 0.1s;
+		}
+
+		input[type="range"]::-webkit-slider-thumb:hover {
+			transform: scale(1.2);
+		}
+
+		select, input[type="text"] {
+			width: 100%;
+			padding: 8px 12px;
+			background-color: var(--bg-input);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			color: var(--text-main);
+			font-size: 0.85rem;
+			outline: none;
+		}
+
+		select:focus, input[type="text"]:focus {
+			border-color: var(--accent);
+		}
+
+		.toggle-row {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+		}
+
+		.switch {
+			position: relative;
+			display: inline-block;
+			width: 44px;
+			height: 24px;
+		}
+
+		.switch input {
+			opacity: 0;
+			width: 0;
+			height: 0;
+		}
+
+		.slider {
+			position: absolute;
+			cursor: pointer;
+			top: 0; left: 0; right: 0; bottom: 0;
+			background-color: var(--bg-input);
+			transition: .2s;
+			border-radius: 24px;
+		}
+
+		.slider:before {
+			position: absolute;
+			content: "";
+			height: 18px;
+			width: 18px;
+			left: 3px;
+			bottom: 3px;
+			background-color: white;
+			transition: .2s;
+			border-radius: 50%;
+		}
+
+		input:checked + .slider {
+			background-color: var(--accent);
+		}
+
+		input:checked + .slider:before {
+			transform: translateX(20px);
+		}
+
+		.btn {
+			padding: 10px 16px;
+			background-color: var(--accent);
+			color: white;
+			border: none;
+			border-radius: 6px;
+			font-size: 0.85rem;
+			font-weight: 600;
+			cursor: pointer;
+			transition: background-color 0.2s;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			gap: 8px;
+			width: 100%;
+		}
+
+		.btn:hover {
+			background-color: var(--accent-hover);
+		}
+
+		.btn:active {
+			background-color: var(--accent-active);
+		}
+
+		.btn-secondary {
+			background-color: var(--bg-input);
+			color: var(--text-main);
+			border: 1px solid var(--border);
+		}
+
+		.btn-secondary:hover {
+			background-color: var(--border-hover);
+		}
+
+		.file-upload {
+			position: relative;
+			display: inline-block;
+			width: 100%;
+		}
+
+		.file-upload input[type="file"] {
+			position: absolute;
+			left: 0;
+			top: 0;
+			opacity: 0;
+			width: 100%;
+			height: 100%;
+			cursor: pointer;
+		}
+
+		.palette-container {
+			display: flex;
+			gap: 8px;
+			margin-top: 4px;
+		}
+
+		.color-picker {
+			-webkit-appearance: none;
+			border: none;
+			width: 32px;
+			height: 32px;
+			border-radius: 4px;
+			cursor: pointer;
+			background: none;
+		}
+
+		.color-picker::-webkit-color-swatch-wrapper {
+			padding: 0;
+		}
+
+		.color-picker::-webkit-color-swatch {
+			border: 1px solid var(--border);
+			border-radius: 4px;
+		}
+
+		.help-card {
+			background-color: rgba(56, 189, 248, 0.05);
+			border: 1px solid rgba(56, 189, 248, 0.2);
+			border-radius: var(--radius);
+			padding: 14px;
+			font-size: 0.8rem;
+			line-height: 1.4;
+			color: var(--text-muted);
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+		}
+
+		.help-card h4 {
+			color: #38bdf8;
+			font-weight: 600;
+			display: flex;
+			align-items: center;
+			gap: 6px;
+		}
+
+		.main-workspace {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			background-color: var(--bg-main);
+			overflow: hidden;
+			position: relative;
+		}
+
+		.toolbar {
+			background-color: var(--bg-panel);
+			border-bottom: 1px solid var(--border);
+			padding: 8px 24px;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			flex-wrap: wrap;
+			gap: 12px;
+		}
+
+		.view-modes {
+			display: flex;
+			gap: 4px;
+			background-color: var(--bg-input);
+			padding: 3px;
+			border-radius: 6px;
+			flex-wrap: wrap;
+		}
+
+		.view-btn {
+			padding: 6px 12px;
+			background: none;
+			border: none;
+			border-radius: 4px;
+			color: var(--text-muted);
+			font-size: 0.8rem;
+			font-weight: 600;
+			cursor: pointer;
+			transition: all 0.15s;
+		}
+
+		.view-btn:hover {
+			color: var(--text-main);
+		}
+
+		.view-btn.active {
+			background-color: var(--accent);
+			color: white;
+		}
+
+		.canvas-wrapper {
+			flex: 1;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			overflow: auto;
+			padding: 16px;
+			position: relative;
+		}
+
+		canvas {
+			box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+			background-color: #000;
+			max-width: 100%;
+			max-height: 100%;
+			object-fit: contain;
+			cursor: crosshair;
+		}
+
+		.status-bar {
+			background-color: var(--bg-panel);
+			border-top: 1px solid var(--border);
+			padding: 6px 24px;
+			font-size: 0.75rem;
+			color: var(--text-muted);
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+		}
+
+		.inspector-overlay {
+			position: absolute;
+			bottom: 40px;
+			left: 40px;
+			background-color: rgba(15, 23, 42, 0.85);
+			backdrop-filter: blur(8px);
+			border: 1px solid var(--border);
+			border-radius: var(--radius);
+			padding: 12px 16px;
+			pointer-events: none;
+			display: none;
+			flex-direction: column;
+			gap: 6px;
+			box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+			z-index: 20;
+		}
+
+		.inspector-overlay.visible {
+			display: flex;
+		}
+
+		.inspector-row {
+			display: flex;
+			justify-content: space-between;
+			gap: 16px;
+			font-size: 0.8rem;
+		}
+
+		.inspector-label {
+			color: var(--text-muted);
+		}
+
+		.inspector-value {
+			font-weight: 700;
+			font-family: monospace;
+			color: var(--accent);
+		}
+
+		.hidden-scratch {
+			display: none;
+		}
+	</style>
+</head>
+<body>
+	<header>
+		<h1>
+			<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+				<circle cx="12" cy="12" r="3"/>
+			</svg>
+			SIRDS Ultimate Studio
+			<span class="badge">100% Zero-Allocation Union-Find Core</span>
+		</h1>
+		<div style="display: flex; gap: 12px;">
+			<button class="btn btn-secondary" id="btnForceRender" style="width: auto;">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+					<path d="M21 3v5h-5"/>
+				</svg>
+				Quick Render
+			</button>
+			<button class="btn" id="btnExport" style="width: auto;">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+					<polyline points="7 10 12 15 17 10"/>
+					<line x1="12" y1="15" x2="12" y2="3"/>
+				</svg>
+				Save PNG
+			</button>
+		</div>
+	</header>
+
+	<div class="app-container">
+		<!-- Sidebar Controls -->
+		<div class="sidebar">
+			<div class="tabs">
+				<button class="tab-btn active" data-tab="tabDepth">Depth Scene</button>
+				<button class="tab-btn" data-tab="tabPattern">Texture</button>
+				<button class="tab-btn" data-tab="tabStereo">Parallax 3D</button>
+				<button class="tab-btn" data-tab="tabHelp">📖 View Guide</button>
+			</div>
+
+			<!-- Tab 1: Depth Map -->
+			<div class="tab-content active" id="tabDepth">
+				<div class="control-group">
+					<div class="control-group-title">Depth Map Source</div>
+					<div class="control-row">
+						<label for="selDepthPreset">3D Solid Pre-Render</label>
+						<select id="selDepthPreset">
+							<option value="shark">Deep Ocean Shark (Classic Organic)</option>
+							<option value="torus" selected>Smooth 3D Torus Ring (Snippet Port)</option>
+							<option value="shapes">Square &amp; Near Circle (Snippet Port)</option>
+							<option value="text3d">3D Text Stamp / Logo (Snippet Port)</option>
+							<option value="heart">Plump Romantic 3D Heart</option>
+							<option value="pyramid">Pharaoh's Step Pyramid</option>
+							<option value="ripples">Hypnotic Water Ripples</option>
+							<option value="custom">User Uploaded Grayscale Map</option>
+						</select>
+					</div>
+
+					<div class="control-row" id="rowCustomText" style="display: none;">
+						<label for="txtCustomDepth">Custom Text Input</label>
+						<input type="text" id="txtCustomDepth" value="3D LAB">
+					</div>
+
+					<div class="file-upload">
+						<button class="btn btn-secondary">
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+								<polyline points="17 8 12 3 7 8"/>
+								<line x1="12" y1="3" x2="12" y2="15"/>
+							</svg>
+							Upload Grayscale Depth Map
+						</button>
+						<input type="file" id="fileDepth" accept="image/*">
+					</div>
+				</div>
+
+				<div class="control-group">
+					<div class="control-group-title">Depth Adjustments</div>
+					<div class="toggle-row">
+						<label for="chkInvertDepth">Invert Z (White = Far Level)</label>
+						<label class="switch">
+							<input type="checkbox" id="chkInvertDepth">
+							<span class="slider"></span>
+						</label>
+					</div>
+
+					<div class="control-row">
+						<div class="control-header">
+							<label for="slideDepthContrast">Z-Contrast</label>
+							<span class="value-display" id="valDepthContrast">1.0</span>
+						</div>
+						<input type="range" id="slideDepthContrast" min="0.2" max="3.0" step="0.1" value="1.0">
+					</div>
+
+					<div class="control-row">
+						<div class="control-header">
+							<label for="slideDepthBlur">Soft Box Blur</label>
+							<span class="value-display" id="valDepthBlur">0px</span>
+						</div>
+						<input type="range" id="slideDepthBlur" min="0" max="20" step="1" value="0">
+					</div>
+				</div>
+			</div>
+
+			<!-- Tab 2: Pattern -->
+			<div class="tab-content" id="tabPattern">
+				<div class="control-group">
+					<div class="control-group-title">Synthesis Generator</div>
+					<div class="control-row">
+						<label for="selPatternStyle">Texture Algorithm</label>
+						<select id="selPatternStyle">
+							<option value="blobs" selected>Magic Eye Organic Blobs (Easiest Fusion)</option>
+							<option value="confetti">Retro 90s Confetti Shapes</option>
+							<option value="tartan">Abstract Tartan Woven Ribbons</option>
+							<option value="tiedye">Psychedelic Tie-Dye Swirls</option>
+							<option value="wood">Natural Wood Grain</option>
+							<option value="stripe">Interference Stripes (Snippet Port)</option>
+							<option value="color">Dense Full Color Noise (Snippet Port)</option>
+							<option value="bw">Crisp B&amp;W Pure Noise (Snippet Port)</option>
+							<option value="custom">User Uploaded Texture</option>
+						</select>
+					</div>
+
+					<div class="file-upload">
+						<button class="btn btn-secondary">
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+								<polyline points="17 8 12 3 7 8"/>
+								<line x1="12" y1="3" x2="12" y2="15"/>
+							</svg>
+							Upload Custom Texture
+						</button>
+						<input type="file" id="filePattern" accept="image/*">
+					</div>
+				</div>
+
+				<div class="control-group" id="groupPalette">
+					<div class="control-group-title">Color Palette</div>
+					<div class="control-row">
+						<label>Color Swatches</label>
+						<div class="palette-container">
+							<input type="color" class="color-picker" id="colPick1" value="#0f172a">
+							<input type="color" class="color-picker" id="colPick2" value="#38bdf8">
+							<input type="color" class="color-picker" id="colPick3" value="#818cf8">
+							<input type="color" class="color-picker" id="colPick4" value="#c084fc">
+							<input type="color" class="color-picker" id="colPick5" value="#f8fafc">
+						</div>
+					</div>
+
+					<div class="control-row">
+						<label for="selPalettePreset">Palette Presets</label>
+						<select id="selPalettePreset">
+							<option value="cyber" selected>Cyberpunk Dream</option>
+							<option value="monochrome">Classic Crisp Black &amp; White</option>
+							<option value="forest">Mystic Forest</option>
+							<option value="sunset">Sunset Horizon</option>
+							<option value="neon">Neon Mint</option>
+						</select>
+					</div>
+				</div>
+
+				<div class="control-group">
+					<div class="control-group-title">Grain &amp; Scaling</div>
+					<div class="control-row">
+						<div class="control-header">
+							<label for="slideNoiseScale">Noise Grain Size (Noise Scale)</label>
+							<span class="value-display" id="valNoiseScale">2px</span>
+						</div>
+						<input type="range" id="slideNoiseScale" min="1" max="10" step="1" value="2">
+					</div>
+
+					<div class="control-row" id="rowPatternZoom">
+						<div class="control-header">
+							<label for="slidePatternZoom">Procedural Zoom / Density</label>
+							<span class="value-display" id="valPatternZoom">1.0x</span>
+						</div>
+						<input type="range" id="slidePatternZoom" min="0.5" max="3.0" step="0.1" value="1.0">
+					</div>
+				</div>
+			</div>
+
+			<!-- Tab 3: Stereo 3D -->
+			<div class="tab-content" id="tabStereo">
+				<div class="control-group">
+					<div class="control-group-title">Optical Core Engine</div>
+					<div class="control-row">
+						<label for="selAlgorithm">Parallax Algorithm</label>
+						<select id="selAlgorithm">
+							<option value="linear">Linear Scanline Parallax (Classic Magic Eye)</option>
+							<option value="thimbleby" selected>Optical Ray Projection (Thimbleby Accurate)</option>
+						</select>
+					</div>
+
+					<div class="control-row">
+						<div class="control-header">
+							<label for="slideSeparation">Pattern Width / Eye Period (E)</label>
+							<span class="value-display" id="valSeparation">160px</span>
+						</div>
+						<input type="range" id="slideSeparation" min="70" max="360" step="5" value="160">
+					</div>
+
+					<div class="control-row">
+						<div class="control-header">
+							<label for="slideDepthFactor">Max 3D Parallax Pop (Depth Factor)</label>
+							<span class="value-display" id="valDepthFactor">40px</span>
+						</div>
+						<input type="range" id="slideDepthFactor" min="10" max="100" step="2" value="40">
+					</div>
+
+					<div class="control-row" id="rowOpticalMu">
+						<div class="control-header">
+							<label for="slideOpticalMu">Optical Index (&mu;)</label>
+							<span class="value-display" id="valOpticalMu">0.30</span>
+						</div>
+						<input type="range" id="slideOpticalMu" min="0.05" max="0.8" step="0.01" value="0.30">
+					</div>
+				</div>
+
+				<div class="control-group">
+					<div class="control-group-title">Stereogram Refinements</div>
+					<div class="toggle-row">
+						<label for="chkHsr">Z-Buffer Hidden Surface Removal</label>
+						<label class="switch">
+							<input type="checkbox" id="chkHsr" checked>
+							<span class="slider"></span>
+						</label>
+					</div>
+
+					<div class="toggle-row">
+						<label for="chkEyeGuide">Convergence Focus Helper Dots</label>
+						<label class="switch">
+							<input type="checkbox" id="chkEyeGuide" checked>
+							<span class="slider"></span>
+						</label>
+					</div>
+
+					<div class="control-row">
+						<label for="selResolutionMode">Canvas Sizing Strategy</label>
+						<select id="selResolutionMode">
+							<option value="auto" selected>Responsive Container Full Sizing (ResizeObserver)</option>
+							<option value="1024x640">Crisp Standard Preset (1024 &times; 640)</option>
+							<option value="1280x800">Wide Standard Preset (1280 &times; 800)</option>
+							<option value="1920x1080">Full HD Preset (1920 &times; 1080)</option>
+						</select>
+					</div>
+				</div>
+			</div>
+
+			<!-- Tab 4: Help & Instructions -->
+			<div class="tab-content" id="tabHelp">
+				<div class="help-card">
+					<h4>
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+							<circle cx="12" cy="12" r="3"/>
+						</svg>
+						How to See Magic Eye 3D
+					</h4>
+					<p>An autostereogram creates a true 3D illusion from a 2D image by tricking your eyes into matching repeating horizontal patterns.</p>
+					<p><b>Step 1:</b> Enable the <i>Convergence Helper Dots</i>. You will see two contrasting circular dots below the image.</p>
+					<p><b>Step 2:</b> Relax your eyes and "look through" the screen into the distance (as if looking out a window). The two guide dots will begin to double into four dots.</p>
+					<p><b>Step 3:</b> Gently adjust your focus until the middle two dots merge together, leaving exactly <b>three dots</b>. Lock your focus on the middle dot.</p>
+					<p><b>Step 4:</b> Look up at the pattern without shifting your eye convergence. The crisp 3D shape will instantly pop out of the screen!</p>
+				</div>
+
+				<div class="help-card">
+					<h4>✨ Live Shimmer Super-Trick</h4>
+					<p>If you have trouble locking your eye focus, click the <b>✨ Live Shimmer Pop</b> viewing button at the top of the workspace.</p>
+					<p>This animates the random texture while keeping the exact 3D depth shape locked. Your brain's motion-perception visual system will instantly recognize the 3D shape without crossing your eyes!</p>
+				</div>
+			</div>
+		</div>
+
+		<!-- Main Workspace -->
+		<div class="main-workspace">
+			<div class="toolbar">
+				<div class="view-modes">
+					<button class="view-btn active" data-view="stereo">3D Stereogram</button>
+					<button class="view-btn" data-view="shimmer">✨ Live Shimmer Pop</button>
+					<button class="view-btn" data-view="wiggle">🌊 Wobble View</button>
+					<button class="view-btn" data-view="anaglyph">👓 Anaglyph Red/Cyan</button>
+					<button class="view-btn" data-view="depth">📏 Inspect Depth Map</button>
+				</div>
+				<div style="display: flex; gap: 12px; align-items: center;">
+					<button class="btn btn-secondary" id="btnInspectorToggle" style="padding: 6px 12px; font-size: 0.8rem; width: auto;">
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<circle cx="12" cy="12" r="10"/>
+							<circle cx="12" cy="12" r="3"/>
+						</svg>
+						3D Reticle
+					</button>
+				</div>
+			</div>
+
+			<div class="canvas-wrapper" id="canvasWrapper">
+				<canvas id="mainCanvas"></canvas>
+				
+				<!-- Interactive Inspector Overlay -->
+				<div class="inspector-overlay" id="inspectorOverlay">
+					<div class="inspector-row">
+						<span class="inspector-label">Cursor Coordinate:</span>
+						<span class="inspector-value" id="dispCoord">X: 0, Y: 0</span>
+					</div>
+					<div class="inspector-row">
+						<span class="inspector-label">Normalized 3D Depth:</span>
+						<span class="inspector-value" id="dispDepth">0.00</span>
+					</div>
+					<div class="inspector-row">
+						<span class="inspector-label">Local Parallax Shift:</span>
+						<span class="inspector-value" id="dispParallax">0 px</span>
+					</div>
+				</div>
+			</div>
+
+			<div class="status-bar">
+				<span id="statusText">Ready &bull; 1024 &times; 640</span>
+				<span id="statusRenderTime">Render time: 0 ms</span>
+			</div>
+		</div>
+	</div>
+
+	<!-- Scratch Hidden Elements -->
+	<div class="hidden-scratch">
+		<canvas id="depthScratchCanvas"></canvas>
+		<canvas id="patternScratchCanvas"></canvas>
+	</div>
+
+	<script>
+		// =====================================================================
+		// 1. UTILITY CORE (TypedArrays, Zero Allocation helpers)
+		// =====================================================================
+		class Utils {
+			static packRGBA(r, g, b, a) {
+				return (a << 24) | (b << 16) | (g << 8) | r;
+			}
+
+			static hexToRGBA(hex) {
+				let c = hex.substring(1);
+				if (c.length === 3) c = c.split('').map(x => x + x).join('');
+				const num = parseInt(c, 16);
+				return {
+					r: (num >> 16) & 255,
+					g: (num >> 8) & 255,
+					b: num & 255,
+					a: 255
+				};
+			}
+
+			static prng(x, y, seed) {
+				// Classic deterministic hash PRNG from snippet
+				const h = Math.sin(x * 12.9898 + y * 78.233 + seed) * 43758.5453123;
+				return h - Math.floor(h);
+			}
+		}
+
+		// =====================================================================
+		// 2. DEPTH MAP PROVIDER (OOP Procedural Scenes & User Image Processing)
+		// =====================================================================
+		class DepthMapProvider {
+			constructor(maxWidth, maxHeight) {
+				this.width = maxWidth;
+				this.height = maxHeight;
+				this.depthBuffer = new Float32Array(maxWidth * maxHeight);
+				this.scratchCanvas = document.getElementById('depthScratchCanvas');
+				this.scratchCtx = this.scratchCanvas.getContext('2d', { willReadFrequently: true });
+				this.userImage = null;
+			}
+
+			resize(width, height) {
+				if (width * height > this.depthBuffer.length) {
+					this.depthBuffer = new Float32Array(width * height);
+				}
+				this.width = width;
+				this.height = height;
+				this.scratchCanvas.width = width;
+				this.scratchCanvas.height = height;
+			}
+
+			generateScene(preset, config) {
+				const { width, height } = this;
+				const buffer = this.depthBuffer;
+				buffer.fill(0.0);
+
+				if (preset === 'shark') {
+					this.renderShark(buffer, width, height);
+				} else if (preset === 'torus') {
+					this.renderTorus(buffer, width, height);
+				} else if (preset === 'shapes') {
+					this.renderShapes(buffer, width, height);
+				} else if (preset === 'text3d') {
+					this.renderText3D(buffer, width, height, config.customText);
+				} else if (preset === 'heart') {
+					this.renderHeart(buffer, width, height);
+				} else if (preset === 'pyramid') {
+					this.renderPyramid(buffer, width, height);
+				} else if (preset === 'ripples') {
+					this.renderRipples(buffer, width, height);
+				} else if (preset === 'custom' && this.userImage) {
+					this.renderUserImage(buffer, width, height);
+				} else {
+					this.renderTorus(buffer, width, height);
+				}
+
+				this.postProcess(buffer, width, height, config);
+			}
+
+			renderShapes(buffer, width, height) {
+				// Direct port of snippet 'shapes': mid-depth rectangle and near circle
+				const rectX = Math.floor(width * 0.15);
+				const rectY = Math.floor(height * 0.2);
+				const rectW = Math.floor(width * 0.35);
+				const rectH = Math.floor(height * 0.5);
+
+				const circleX = Math.floor(width * 0.7);
+				const circleY = Math.floor(height * 0.5);
+				const circleR = Math.floor(Math.min(width, height) * 0.22);
+				const circleR2 = circleR * circleR;
+
+				for (let y = 0; y < height; y++) {
+					const rowOffset = y * width;
+					const dy = y - circleY;
+					const dy2 = dy * dy;
+
+					for (let x = 0; x < width; x++) {
+						let z = 0.0;
+						if (x >= rectX && x < rectX + rectW && y >= rectY && y < rectY + rectH) {
+							z = 0.55; // rgb(140, 140, 140) equivalent
+						}
+						const dx = x - circleX;
+						if (dx * dx + dy2 <= circleR2) {
+							z = 1.0; // Full white nearest equivalent
+						}
+						buffer[rowOffset + x] = z;
+					}
+				}
+			}
+
+			renderTorus(buffer, width, height) {
+				// Direct highly optimized port of snippet 'torus'
+				const cx = Math.floor(width * 0.5);
+				const cy = Math.floor(height * 0.5);
+				const maxR = Math.floor(Math.min(width, height) * 0.35);
+				const minR = Math.floor(maxR * 0.36);
+				const mid = (minR + maxR) * 0.5;
+				const thickness = (maxR - minR) * 0.5;
+
+				for (let y = 0; y < height; y++) {
+					const rowOffset = y * width;
+					const dy = y - cy;
+					const dy2 = dy * dy;
+
+					for (let x = 0; x < width; x++) {
+						const dx = x - cx;
+						const dist = Math.sqrt(dx * dx + dy2);
+						let z = 0.0;
+
+						if (dist >= minR && dist <= maxR) {
+							const distFromPeak = Math.abs(dist - mid);
+							z = Math.max(0.0, 1.0 - (distFromPeak / thickness));
+						}
+						buffer[rowOffset + x] = z * 0.9;
+					}
+				}
+			}
+
+			renderText3D(buffer, width, height, customText) {
+				// Direct high-quality port of snippet 'text3d'
+				const ctx = this.scratchCtx;
+				ctx.fillStyle = '#000000';
+				ctx.fillRect(0, 0, width, height);
+
+				ctx.save();
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.font = `bold ${Math.floor(height * 0.28)}px sans-serif`;
+
+				// Midground shadow layer
+				ctx.fillStyle = 'rgb(150, 150, 150)';
+				ctx.fillText(customText, width * 0.5 - 6, height * 0.5 - 6);
+
+				// Foreground peak layer
+				ctx.fillStyle = 'rgb(255, 255, 255)';
+				ctx.fillText(customText, width * 0.5, height * 0.5);
+
+				// Optional slight blur for rounded edges
+				ctx.restore();
+
+				const imgData = ctx.getImageData(0, 0, width, height).data;
+				const len = width * height;
+				for (let i = 0; i < len; i++) {
+					buffer[i] = imgData[i * 4] / 255.0;
+				}
+			}
+
+			renderShark(buffer, width, height) {
+				const cx = width * 0.5;
+				const cy = height * 0.5;
+				const bodyLen = width * 0.3;
+				const bodyThick = height * 0.16;
+
+				for (let y = 0; y < height; y++) {
+					const rowOffset = y * width;
+					const dy = y - cy;
+					
+					for (let x = 0; x < width; x++) {
+						const dx = x - cx;
+						let z = Math.max(0.0, 0.15 + 0.1 * Math.sin(x * 0.01) + 0.08 * (y / height));
+
+						// Shark Body
+						const bodyDist = (dx * dx) / (bodyLen * bodyLen) + (dy * dy) / (bodyThick * bodyThick);
+						if (bodyDist <= 1.0) {
+							const bodyZ = 0.35 + 0.65 * Math.sqrt(1.0 - bodyDist);
+							if (bodyZ > z) z = bodyZ;
+						}
+
+						// Dorsal Fin
+						if (dx >= -bodyLen * 0.25 && dx <= bodyLen * 0.2 && dy < 0 && dy >= -bodyThick * 1.8) {
+							const finProgress = (dx - (-bodyLen * 0.25)) / (bodyLen * 0.45);
+							const finHeight = (-dy - bodyThick * 0.7) / (bodyThick * 1.1);
+							if (finHeight > 0 && finProgress > finHeight * 0.4 && finProgress < 1.0 - finHeight * 0.4) {
+								const finZ = 0.5 + 0.3 * (1.0 - finHeight);
+								if (finZ > z) z = finZ;
+							}
+						}
+
+						// Pectoral Fin
+						if (dx >= -bodyLen * 0.2 && dx <= bodyLen * 0.1 && dy > bodyThick * 0.5 && dy <= bodyThick * 1.6) {
+							const pProg = (dx - (-bodyLen * 0.2)) / (bodyLen * 0.3);
+							const pHeight = (dy - bodyThick * 0.5) / (bodyThick * 1.1);
+							if (pProg > pHeight * 0.3 && pProg < 1.0 - pHeight * 0.3) {
+								const pZ = 0.55 + 0.2 * (1.0 - pHeight);
+								if (pZ > z) z = pZ;
+							}
+						}
+
+						// Tail Fin
+						if (dx < -bodyLen * 0.8 && dx >= -bodyLen * 1.4) {
+							const tailX = (-dx - bodyLen * 0.8) / (bodyLen * 0.6);
+							const tailY = Math.abs(dy) / (bodyThick * 1.5);
+							if (tailY <= tailX) {
+								const tailZ = 0.35 + 0.25 * (1.0 - tailX);
+								if (tailZ > z) z = tailZ;
+							}
+						}
+
+						buffer[rowOffset + x] = z;
+					}
+				}
+			}
+
+			renderHeart(buffer, width, height) {
+				const cx = width * 0.5;
+				const cy = height * 0.45;
+				const scale = Math.min(width, height) * 0.024;
+
+				for (let y = 0; y < height; y++) {
+					const rowOffset = y * width;
+					for (let x = 0; x < width; x++) {
+						const hx = (x - cx) / scale;
+						const hy = -(y - cy) / scale;
+						
+						const a = hx * hx + hy * hy - 25.0;
+						const inHeart = (a * a * a - hx * hx * hy * hy * hy) <= 0.0;
+
+						if (inHeart) {
+							const edgeDist = Math.sqrt(Math.abs(a));
+							buffer[rowOffset + x] = 0.2 + 0.8 * Math.min(1.0, edgeDist / 8.0);
+						} else {
+							buffer[rowOffset + x] = 0.05;
+						}
+					}
+				}
+			}
+
+			renderPyramid(buffer, width, height) {
+				const cx = width * 0.5;
+				const cy = height * 0.55;
+				const baseW = Math.min(width, height) * 0.36;
+				const steps = 5;
+
+				for (let y = 0; y < height; y++) {
+					const rowOffset = y * width;
+					const dy = Math.abs(y - cy);
+
+					for (let x = 0; x < width; x++) {
+						const dx = Math.abs(x - cx);
+						const dist = Math.max(dx, dy);
+
+						if (dist < baseW) {
+							const stepNormalized = 1.0 - (dist / baseW);
+							const quantized = Math.floor(stepNormalized * steps) / (steps - 1);
+							buffer[rowOffset + x] = 0.2 + 0.75 * quantized;
+						} else {
+							buffer[rowOffset + x] = 0.05;
+						}
+					}
+				}
+			}
+
+			renderRipples(buffer, width, height) {
+				const cx = width * 0.5;
+				const cy = height * 0.5;
+				const freq = 0.06;
+
+				for (let y = 0; y < height; y++) {
+					const rowOffset = y * width;
+					const dy = y - cy;
+
+					for (let x = 0; x < width; x++) {
+						const dx = x - cx;
+						const dist = Math.sqrt(dx * dx + dy * dy);
+						const ripple = (Math.cos(dist * freq) + 1.0) * 0.5 * Math.max(0.0, 1.0 - dist / (width * 0.55));
+						buffer[rowOffset + x] = 0.2 + 0.7 * ripple;
+					}
+				}
+			}
+
+			renderUserImage(buffer, width, height) {
+				const ctx = this.scratchCtx;
+				ctx.fillStyle = '#000000';
+				ctx.fillRect(0, 0, width, height);
+
+				if (this.userImage) {
+					const img = this.userImage;
+					const scale = Math.min(width / img.width, height / img.height) * 0.9;
+					const dw = img.width * scale;
+					const dh = img.height * scale;
+					const dx = (width - dw) * 0.5;
+					const dy = (height - dh) * 0.5;
+					ctx.drawImage(img, dx, dy, dw, dh);
+				}
+
+				const imgData = ctx.getImageData(0, 0, width, height).data;
+				const len = width * height;
+				for (let i = 0; i < len; i++) {
+					const idx = i * 4;
+					const lum = (0.299 * imgData[idx] + 0.587 * imgData[idx + 1] + 0.114 * imgData[idx + 2]) / 255.0;
+					buffer[i] = lum;
+				}
+			}
+
+			postProcess(buffer, width, height, config) {
+				const len = width * height;
+				const { contrast, blur, invert } = config;
+
+				if (contrast !== 1.0) {
+					for (let i = 0; i < len; i++) {
+						let v = buffer[i];
+						v = (v - 0.5) * contrast + 0.5;
+						buffer[i] = Math.max(0.0, Math.min(1.0, v));
+					}
+				}
+
+				if (blur > 0) {
+					this.applyBoxBlur(buffer, width, height, blur);
+				}
+
+				if (invert) {
+					for (let i = 0; i < len; i++) {
+						buffer[i] = 1.0 - buffer[i];
+					}
+				}
+			}
+
+			applyBoxBlur(buffer, width, height, radius) {
+				const scratch = new Float32Array(buffer.length);
+				const r = Math.min(15, radius);
+				const windowSize = r * 2 + 1;
+
+				for (let y = 0; y < height; y++) {
+					const rowOffset = y * width;
+					let sum = 0.0;
+					for (let i = -r; i <= r; i++) {
+						const px = Math.max(0, Math.min(width - 1, i));
+						sum += buffer[rowOffset + px];
+					}
+
+					for (let x = 0; x < width; x++) {
+						scratch[rowOffset + x] = sum / windowSize;
+						const leftPx = Math.max(0, x - r);
+						const rightPx = Math.min(width - 1, x + r + 1);
+						sum += buffer[rowOffset + rightPx] - buffer[rowOffset + leftPx];
+					}
+				}
+
+				for (let x = 0; x < width; x++) {
+					let sum = 0.0;
+					for (let i = -r; i <= r; i++) {
+						const py = Math.max(0, Math.min(height - 1, i));
+						sum += scratch[py * width + x];
+					}
+
+					for (let y = 0; y < height; y++) {
+						buffer[y * width + x] = sum / windowSize;
+						const topPy = Math.max(0, y - r);
+						const bottomPy = Math.min(height - 1, y + r + 1);
+						sum += scratch[bottomPy * width + x] - scratch[topPy * width + x];
+					}
+				}
+			}
+
+			setUserImage(img) {
+				this.userImage = img;
+			}
+		}
+
+		// =====================================================================
+		// 3. PATTERN PROVIDER (OOP Pluggable Snippet PRNG & High-Vis Textures)
+		// =====================================================================
+		class PatternProvider {
+			constructor() {
+				this.scratchCanvas = document.getElementById('patternScratchCanvas');
+				this.scratchCtx = this.scratchCanvas.getContext('2d', { willReadFrequently: true });
+				this.userImage = null;
+				this.patternBuffer = new Uint32Array(0);
+				this.width = 0;
+				this.height = 0;
+			}
+
+			generate(style, width, height, config) {
+				this.width = width;
+				this.height = height;
+				
+				this.scratchCanvas.width = width;
+				this.scratchCanvas.height = height;
+				const ctx = this.scratchCtx;
+
+				if (style === 'blobs') {
+					this.generateBlobs(ctx, width, height, config);
+				} else if (style === 'confetti') {
+					this.generateConfetti(ctx, width, height, config);
+				} else if (style === 'tartan') {
+					this.generateTartan(ctx, width, height, config);
+				} else if (style === 'tiedye') {
+					this.generateTieDye(ctx, width, height, config);
+				} else if (style === 'wood') {
+					this.generateWood(ctx, width, height, config);
+				} else if (style === 'stripe') {
+					this.generateStripeSnippet(ctx, width, height, config);
+				} else if (style === 'color') {
+					this.generateColorSnippet(ctx, width, height, config);
+				} else if (style === 'bw') {
+					this.generateBWSnippet(ctx, width, height, config);
+				} else if (style === 'custom' && this.userImage) {
+					const img = this.userImage;
+					const zoom = config.patternZoom;
+					ctx.fillStyle = ctx.createPattern(img, 'repeat');
+					ctx.save();
+					ctx.scale(zoom, zoom);
+					ctx.fillRect(0, 0, width / zoom, height / zoom);
+					ctx.restore();
+				} else {
+					this.generateBlobs(ctx, width, height, config);
+				}
+
+				this.patternBuffer = new Uint32Array(ctx.getImageData(0, 0, width, height).data.buffer);
+			}
+
+			generateStripeSnippet(ctx, width, height, config) {
+				// Direct highly-optimized snippet 'stripe' port
+				const imgData = ctx.createImageData(width, height);
+				const data = new Uint32Array(imgData.data.buffer);
+				const ns = config.noiseScale;
+				const seed = config.seed;
+
+				for (let y = 0; y < height; y++) {
+					const rowOffset = y * width;
+					const ny = Math.floor(y / ns) * ns;
+					for (let x = 0; x < width; x++) {
+						const nx = Math.floor(x / ns) * ns;
+						const val = Math.floor((Math.sin(nx * 0.15) + 1.0) * 127);
+						const r = (val + (ny % 30) * 4) % 255;
+						data[rowOffset + x] = Utils.packRGBA(r, val, 255 - val, 255);
+					}
+				}
+				ctx.putImageData(imgData, 0, 0);
+			}
+
+			generateColorSnippet(ctx, width, height, config) {
+				// Direct snippet 'color' noise port
+				const imgData = ctx.createImageData(width, height);
+				const data = new Uint32Array(imgData.data.buffer);
+				const ns = config.noiseScale;
+				const seed = config.seed;
+
+				for (let y = 0; y < height; y++) {
+					const rowOffset = y * width;
+					const ny = Math.floor(y / ns) * ns;
+					for (let x = 0; x < width; x++) {
+						const nx = Math.floor(x / ns) * ns;
+						const r = Math.floor(Utils.prng(nx, ny, seed) * 256);
+						const g = Math.floor(Utils.prng(nx + 1, ny, seed) * 256);
+						const b = Math.floor(Utils.prng(nx, ny + 1, seed) * 256);
+						data[rowOffset + x] = Utils.packRGBA(r, g, b, 255);
+					}
+				}
+				ctx.putImageData(imgData, 0, 0);
+			}
+
+			generateBWSnippet(ctx, width, height, config) {
+				// Direct snippet 'bw' purely deterministic PRNG noise
+				const imgData = ctx.createImageData(width, height);
+				const data = new Uint32Array(imgData.data.buffer);
+				const ns = config.noiseScale;
+				const seed = config.seed;
+
+				for (let y = 0; y < height; y++) {
+					const rowOffset = y * width;
+					const ny = Math.floor(y / ns) * ns;
+					for (let x = 0; x < width; x++) {
+						const nx = Math.floor(x / ns) * ns;
+						const rand = Utils.prng(nx, ny, seed) > 0.5 ? 255 : 0;
+						data[rowOffset + x] = Utils.packRGBA(rand, rand, rand, 255);
+					}
+				}
+				ctx.putImageData(imgData, 0, 0);
+			}
+
+			generateBlobs(ctx, width, height, config) {
+				ctx.fillStyle = config.palette[0];
+				ctx.fillRect(0, 0, width, height);
+
+				const colors = config.palette.slice(1);
+				const zoom = config.patternZoom;
+				const numBlobs = Math.floor(45 * zoom);
+
+				for (let i = 0; i < numBlobs; i++) {
+					const r = Math.floor((Math.random() * 12 + 6) / zoom);
+					const x = Math.floor(Math.random() * width);
+					const y = Math.floor(Math.random() * height);
+					const col = colors[Math.floor(Math.random() * colors.length)];
+
+					ctx.fillStyle = col;
+					ctx.beginPath();
+					ctx.arc(x, y, r, 0, Math.PI * 2);
+					ctx.fill();
+
+					ctx.fillStyle = config.palette[0];
+					ctx.beginPath();
+					ctx.arc(x - r*0.2, y - r*0.2, r * 0.3, 0, Math.PI * 2);
+					ctx.fill();
+				}
+			}
+
+			generateConfetti(ctx, width, height, config) {
+				ctx.fillStyle = config.palette[0];
+				ctx.fillRect(0, 0, width, height);
+
+				const colors = config.palette;
+				const zoom = config.patternZoom;
+				const numShapes = Math.floor(65 * zoom);
+
+				for (let i = 0; i < numShapes; i++) {
+					const w = Math.floor((Math.random() * 20 + 8) / zoom);
+					const h = Math.floor((Math.random() * 20 + 8) / zoom);
+					const x = Math.floor(Math.random() * width);
+					const y = Math.floor(Math.random() * height);
+					const col = colors[Math.floor(Math.random() * colors.length)];
+
+					ctx.fillStyle = col;
+					ctx.save();
+					ctx.translate(x, y);
+					ctx.rotate(Math.random() * Math.PI);
+					ctx.fillRect(-w * 0.5, -h * 0.5, w, h);
+					ctx.restore();
+				}
+			}
+
+			generateTartan(ctx, width, height, config) {
+				ctx.fillStyle = config.palette[0];
+				ctx.fillRect(0, 0, width, height);
+
+				const colors = config.palette;
+				const zoom = config.patternZoom;
+				const bandSize = Math.floor(16 / zoom);
+
+				colors.forEach((col, idx) => {
+					ctx.fillStyle = col;
+					const pos = (idx * bandSize * 2) % width;
+					ctx.fillRect(pos, 0, bandSize, height);
+					ctx.fillRect(0, pos, width, bandSize);
+				});
+			}
+
+			generateTieDye(ctx, width, height, config) {
+				const imgData = ctx.createImageData(width, height);
+				const data = new Uint32Array(imgData.data.buffer);
+				const colors = config.palette.map(c => Utils.hexToRGBA(c));
+				const cx = width * 0.5;
+				const cy = height * 0.5;
+				const zoom = config.patternZoom;
+
+				for (let y = 0; y < height; y++) {
+					const rowOffset = y * width;
+					const dy = y - cy;
+					for (let x = 0; x < width; x++) {
+						const dx = x - cx;
+						const dist = Math.sqrt(dx * dx + dy * dy);
+						const angle = Math.atan2(dy, dx);
+
+						const ring = (Math.sin(dist * 0.2 * zoom + angle * 4.0) + 1.0) * 0.5;
+						
+						const cIdx = ring * (colors.length - 1);
+						const i0 = Math.floor(cIdx);
+						const i1 = Math.min(colors.length - 1, i0 + 1);
+						const frac = cIdx - i0;
+
+						const col0 = colors[i0];
+						const col1 = colors[i1];
+
+						const r = Math.floor(col0.r + (col1.r - col0.r) * frac);
+						const g = Math.floor(col0.g + (col1.g - col0.g) * frac);
+						const b = Math.floor(col0.b + (col1.b - col0.b) * frac);
+
+						data[rowOffset + x] = (255 << 24) | (b << 16) | (g << 8) | r;
+					}
+				}
+				ctx.putImageData(imgData, 0, 0);
+			}
+
+			generateWood(ctx, width, height, config) {
+				const imgData = ctx.createImageData(width, height);
+				const data = new Uint32Array(imgData.data.buffer);
+				const c0 = Utils.hexToRGBA('#783c00');
+				const c1 = Utils.hexToRGBA('#dca464');
+				const zoom = config.patternZoom;
+
+				for (let y = 0; y < height; y++) {
+					const rowOffset = y * width;
+					for (let x = 0; x < width; x++) {
+						const grain = Math.sin(y * 0.12 * zoom + Math.sin(x * 0.06 * zoom) * 2.5);
+						const fine = Math.sin(y * 2.0 * zoom) * 0.1;
+						const val = Math.max(0.0, Math.min(1.0, (grain + fine + 1.0) * 0.5));
+
+						const r = Math.floor(c0.r + (c1.r - c0.r) * val);
+						const g = Math.floor(c0.g + (c1.g - c0.g) * val);
+						const b = Math.floor(c0.b + (c1.b - c0.b) * val);
+
+						data[rowOffset + x] = (255 << 24) | (b << 16) | (g << 8) | r;
+					}
+				}
+				ctx.putImageData(imgData, 0, 0);
+			}
+
+			setUserImage(img) {
+				this.userImage = img;
+			}
+		}
+
+		// =====================================================================
+		// 4. SIRDS GENERATOR CORE (Highly optimized 100% Zero-Allocation Union-Find Engine)
+		// =====================================================================
+		class SIRDSGenerator {
+			constructor(maxWidth = 4096) {
+				this.same = new Int32Array(maxWidth);
+				this.leftZ = new Float32Array(maxWidth);
+				this.rightZ = new Float32Array(maxWidth);
+			}
+
+			generate(depthMap, patternBuffer, width, height, config) {
+				const { separation, depthFactor, algorithm, opticalMu, useHsr } = config;
+				const isLinear = (algorithm === 'linear');
+				const outPixels = new Uint32Array(width * height);
+				const E = separation;
+				const patW = patternBuffer.width;
+				const patH = patternBuffer.height;
+				const patData = patternBuffer.patternBuffer;
+
+				if (width > this.same.length) {
+					this.same = new Int32Array(width * 2);
+					this.leftZ = new Float32Array(width * 2);
+					this.rightZ = new Float32Array(width * 2);
+				}
+
+				const { same, leftZ, rightZ } = this;
+
+				for (let y = 0; y < height; y++) {
+					const rowOffset = y * width;
+					const patY = y % patH;
+					const patRowOffset = patY * patW;
+
+					// 1. Initialize link array and Ray buffers
+					for (let x = 0; x < width; x++) {
+						same[x] = x;
+						leftZ[x] = -1.0;
+						rightZ[x] = -1.0;
+					}
+
+					// 2. Exact Z-Buffer Visibility Pass (Prevents "echoes" and surface flange shredding)
+					if (useHsr) {
+						for (let x = 0; x < width; x++) {
+							const z = depthMap[rowOffset + x];
+							let s;
+							if (isLinear) {
+								s = E - Math.round(z * depthFactor);
+							} else {
+								s = Math.round((1.0 - opticalMu * z) * E / (2.0 - opticalMu * z));
+							}
+							if (s < 2) s = 2;
+
+							const left = Math.round(x - s * 0.5);
+							const right = left + s;
+
+							if (left >= 0 && right < width) {
+								if (z > leftZ[left]) leftZ[left] = z;
+								if (z > rightZ[right]) rightZ[right] = z;
+							}
+						}
+					}
+
+					// 3. Establish Stereo Links with fast Union-Find root compression
+					for (let x = 0; x < width; x++) {
+						const z = depthMap[rowOffset + x];
+						let s;
+						if (isLinear) {
+							s = E - Math.round(z * depthFactor);
+						} else {
+							s = Math.round((1.0 - opticalMu * z) * E / (2.0 - opticalMu * z));
+						}
+						if (s < 2) s = 2;
+
+						const left = Math.round(x - s * 0.5);
+						const right = left + s;
+
+						if (left >= 0 && right < width) {
+							let visible = true;
+							if (useHsr) {
+								visible = (z >= leftZ[left] - 0.01 && z >= rightZ[right] - 0.01);
+							}
+
+							if (visible) {
+								let rootLeft = left;
+								while (same[rootLeft] !== rootLeft) {
+									rootLeft = same[rootLeft];
+								}
+
+								let rootRight = right;
+								while (same[rootRight] !== rootRight) {
+									rootRight = same[rootRight];
+								}
+
+								if (rootLeft !== rootRight) {
+									// Strictly maintain left-pointing roots so same[i] <= i
+									if (rootLeft < rootRight) {
+										same[rootRight] = rootLeft;
+									} else {
+										same[rootLeft] = rootRight;
+									}
+								}
+							}
+						}
+					}
+
+					// 4. Propagate final seamless pattern from Left to Right
+					for (let x = 0; x < width; x++) {
+						const root = same[x];
+						if (root === x) {
+							const patX = x % patW;
+							outPixels[rowOffset + x] = patData[patRowOffset + patX];
+						} else {
+							outPixels[rowOffset + x] = outPixels[rowOffset + root];
+						}
+					}
+				}
+
+				return outPixels;
+			}
+		}
+
+		// =====================================================================
+		// 5. MULTI-VIEW RENDERER (Stereogram, Shimmer, Wiggle, Anaglyph, Inspector)
+		// =====================================================================
+		class MultiViewRenderer {
+			constructor(canvasId) {
+				this.canvas = document.getElementById(canvasId);
+				this.ctx = this.canvas.getContext('2d');
+				this.activeView = 'stereo';
+				this.renderTimer = null;
+				this.eyeGuideEnabled = true;
+			}
+
+			render(viewMode, depthMap, patternProvider, width, height, config, sirdsEngine) {
+				this.activeView = viewMode;
+				this.canvas.width = width;
+				this.canvas.height = height;
+
+				if (this.renderTimer) {
+					clearInterval(this.renderTimer);
+					this.renderTimer = null;
+				}
+
+				const startTime = performance.now();
+
+				if (viewMode === 'stereo') {
+					const sirdsPixels = sirdsEngine.generate(depthMap, patternProvider, width, height, config);
+					this.displayPixels(sirdsPixels, width, height);
+					if (this.eyeGuideEnabled) this.drawEyeGuideDots(width, height, config.separation);
+				} else if (viewMode === 'shimmer') {
+					this.startShimmerLoop(depthMap, patternProvider, width, height, config, sirdsEngine);
+				} else if (viewMode === 'wiggle') {
+					this.startWiggleLoop(depthMap, width, height, config);
+				} else if (viewMode === 'anaglyph') {
+					this.renderAnaglyph(depthMap, width, height, config);
+				} else if (viewMode === 'depth') {
+					this.renderDepthView(depthMap, width, height);
+				}
+
+				const duration = Math.round(performance.now() - startTime);
+				document.getElementById('statusRenderTime').innerText = `Render time: ${duration} ms`;
+			}
+
+			displayPixels(pixelBuffer32, width, height) {
+				const imgData = new ImageData(width, height);
+				const data32 = new Uint32Array(imgData.data.buffer);
+				data32.set(pixelBuffer32);
+				this.ctx.putImageData(imgData, 0, 0);
+			}
+
+			drawEyeGuideDots(width, height, sep) {
+				const ctx = this.ctx;
+				ctx.save();
+				ctx.fillStyle = '#ffffff';
+				ctx.strokeStyle = '#000000';
+				ctx.lineWidth = 3;
+				
+				const dotY = height - 28;
+				const leftX = (width - sep) * 0.5;
+				const rightX = leftX + sep;
+
+				[leftX, rightX].forEach(x => {
+					ctx.beginPath();
+					ctx.arc(x, dotY, 9, 0, Math.PI * 2);
+					ctx.stroke();
+					ctx.fill();
+				});
+				ctx.restore();
+			}
+
+			startShimmerLoop(depthMap, patternProvider, width, height, config, sirdsEngine) {
+				let seed = 1;
+				this.renderTimer = setInterval(() => {
+					seed++;
+					patternProvider.generate(config.patternStyle, config.separation, config.separation, { ...config, seed });
+					
+					const pixels = sirdsEngine.generate(depthMap, patternProvider, width, height, config);
+					this.displayPixels(pixels, width, height);
+					if (this.eyeGuideEnabled) this.drawEyeGuideDots(width, height, config.separation);
+				}, 64);
+			}
+
+			startWiggleLoop(depthMap, width, height, config) {
+				let isLeft = true;
+				const maxShift = Math.floor(config.depthFactor * 0.6);
+
+				this.renderTimer = setInterval(() => {
+					isLeft = !isLeft;
+					const imgData = new ImageData(width, height);
+					const data = new Uint32Array(imgData.data.buffer);
+
+					for (let y = 0; y < height; y++) {
+						const rowOffset = y * width;
+						for (let x = 0; x < width; x++) {
+							const z = depthMap[rowOffset + x];
+							const shift = Math.round(z * maxShift);
+							const sx = Math.max(0, Math.min(width - 1, isLeft ? x - shift : x + shift));
+							
+							const colVal = Math.floor(z * 200 + 55);
+							data[rowOffset + x] = (255 << 24) | (colVal << 16) | (Math.floor(colVal * 0.8) << 8) | Math.floor(colVal * 0.6);
+						}
+					}
+					this.ctx.putImageData(imgData, 0, 0);
+				}, 150);
+			}
+
+			renderAnaglyph(depthMap, width, height, config) {
+				const imgData = new ImageData(width, height);
+				const data = imgData.data;
+				const maxShift = Math.floor(config.depthFactor * 0.5);
+
+				for (let y = 0; y < height; y++) {
+					const rowOffset = y * width;
+					for (let x = 0; x < width; x++) {
+						const z = depthMap[rowOffset + x];
+						const shift = Math.round(z * maxShift);
+
+						const lx = Math.max(0, x - shift);
+						const rx = Math.min(width - 1, x + shift);
+
+						const lLum = Math.floor(depthMap[rowOffset + lx] * 200 + 55);
+						const rLum = Math.floor(depthMap[rowOffset + rx] * 200 + 55);
+
+						const idx = (rowOffset + x) * 4;
+						data[idx] = lLum;     // Red
+						data[idx + 1] = rLum; // Green
+						data[idx + 2] = rLum; // Blue
+						data[idx + 3] = 255;  // Alpha
+					}
+				}
+				this.ctx.putImageData(imgData, 0, 0);
+			}
+
+			renderDepthView(depthMap, width, height) {
+				const imgData = new ImageData(width, height);
+				const data32 = new Uint32Array(imgData.data.buffer);
+				const len = width * height;
+
+				for (let i = 0; i < len; i++) {
+					const v = Math.floor(depthMap[i] * 255);
+					data32[i] = (255 << 24) | (v << 16) | (v << 8) | v;
+				}
+				this.ctx.putImageData(imgData, 0, 0);
+			}
+		}
+
+		// =====================================================================
+		// 6. APPLICATION UI CONTROLLER (Event Wireup, Sliders, Live State)
+		// =====================================================================
+		class StereoAppUI {
+			constructor() {
+				this.depthProvider = new DepthMapProvider(1, 1);
+				this.patternProvider = new PatternProvider();
+				this.sirdsEngine = new SIRDSGenerator();
+				this.renderer = new MultiViewRenderer('mainCanvas');
+
+				this.config = {
+					depthPreset: 'torus',
+					customText: '3D LAB',
+					invertDepth: false,
+					contrast: 1.0,
+					blur: 0,
+					
+					patternStyle: 'blobs',
+					palette: ['#0f172a', '#38bdf8', '#818cf8', '#c084fc', '#f8fafc'],
+					dotSize: 2,
+					noiseScale: 2,
+					patternZoom: 1.0,
+					seed: 1,
+
+					algorithm: 'thimbleby',
+					separation: 160,
+					depthFactor: 40,
+					opticalMu: 0.30,
+					useHsr: true,
+
+					resolutionMode: 'auto',
+					containerWidth: 1024,
+					containerHeight: 640
+				};
+
+				this.inspectorActive = false;
+				this.initDOM();
+				this.bindEvents();
+				this.setupResizeObserver();
+			}
+
+			initDOM() {
+				this.dom = {
+					canvas: document.getElementById('mainCanvas'),
+					inspectorOverlay: document.getElementById('inspectorOverlay'),
+					dispCoord: document.getElementById('dispCoord'),
+					dispDepth: document.getElementById('dispDepth'),
+					dispParallax: document.getElementById('dispParallax')
+				};
+			}
+
+			setupResizeObserver() {
+				const wrapper = this.dom.canvas.parentElement;
+				const observer = new ResizeObserver(entries => {
+					for (let entry of entries) {
+						const { clientWidth, clientHeight } = entry.target;
+						if (clientWidth > 0 && clientHeight > 0) {
+							this.config.containerWidth = clientWidth;
+							this.config.containerHeight = clientHeight;
+							if (this.config.resolutionMode === 'auto') {
+								this.triggerFullRender();
+							}
+						}
+					}
+				});
+				observer.observe(wrapper);
+			}
+
+			bindEvents() {
+				// Tab Switching
+				document.querySelectorAll('.tab-btn').forEach(btn => {
+					btn.addEventListener('click', () => {
+						document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+						document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+						btn.classList.add('active');
+						document.getElementById(btn.dataset.tab).classList.add('active');
+					});
+				});
+
+				// View Mode Navigation
+				document.querySelectorAll('.view-btn').forEach(btn => {
+					btn.addEventListener('click', () => {
+						document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+						btn.classList.add('active');
+						const view = btn.dataset.view;
+						this.triggerRenderOnly(view);
+					});
+				});
+
+				// Quick Quick Render Force button
+				document.getElementById('btnForceRender').addEventListener('click', () => {
+					document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+					document.querySelector('.view-btn[data-view="stereo"]').classList.add('active');
+					this.triggerFullRender('stereo');
+				});
+
+				// Depth Core
+				document.getElementById('selDepthPreset').addEventListener('change', (e) => {
+					this.config.depthPreset = e.target.value;
+					document.getElementById('rowCustomText').style.display = (e.target.value === 'text3d') ? 'flex' : 'none';
+					this.triggerFullRender();
+				});
+
+				document.getElementById('txtCustomDepth').addEventListener('input', (e) => {
+					this.config.customText = e.target.value;
+					if (this.config.depthPreset === 'text3d') this.triggerFullRender();
+				});
+
+				document.getElementById('fileDepth').addEventListener('change', (e) => {
+					const file = e.target.files[0];
+					if (file) {
+						const reader = new FileReader();
+						reader.onload = (event) => {
+							const img = new Image();
+							img.onload = () => {
+								this.depthProvider.setUserImage(img);
+								document.getElementById('selDepthPreset').value = 'custom';
+								this.config.depthPreset = 'custom';
+								this.triggerFullRender();
+							};
+							img.src = event.target.result;
+						};
+						reader.readAsDataURL(file);
+					}
+				});
+
+				document.getElementById('chkInvertDepth').addEventListener('change', (e) => {
+					this.config.invertDepth = e.target.checked;
+					this.triggerFullRender();
+				});
+
+				document.getElementById('slideDepthContrast').addEventListener('input', (e) => {
+					this.config.contrast = parseFloat(e.target.value);
+					document.getElementById('valDepthContrast').innerText = parseFloat(e.target.value).toFixed(1);
+					this.triggerFullRender();
+				});
+
+				document.getElementById('slideDepthBlur').addEventListener('input', (e) => {
+					this.config.blur = parseInt(e.target.value);
+					document.getElementById('valDepthBlur').innerText = `${e.target.value}px`;
+					this.triggerFullRender();
+				});
+
+				// Texture Core
+				document.getElementById('selPatternStyle').addEventListener('change', (e) => {
+					this.config.patternStyle = e.target.value;
+					document.getElementById('groupPalette').style.display = (e.target.value !== 'custom' && e.target.value !== 'stripe' && e.target.value !== 'bw') ? 'flex' : 'none';
+					document.getElementById('rowDotSize').style.display = e.target.value.startsWith('dots') ? 'flex' : 'none';
+					document.getElementById('rowPatternZoom').style.display = (e.target.value === 'stripe' || e.target.value === 'color' || e.target.value === 'bw') ? 'none' : 'flex';
+					this.triggerFullRender();
+				});
+
+				document.getElementById('filePattern').addEventListener('change', (e) => {
+					const file = e.target.files[0];
+					if (file) {
+						const reader = new FileReader();
+						reader.onload = (event) => {
+							const img = new Image();
+							img.onload = () => {
+								this.patternProvider.setUserImage(img);
+								document.getElementById('selPatternStyle').value = 'custom';
+								this.config.patternStyle = 'custom';
+								this.triggerFullRender();
+							};
+							img.src = event.target.result;
+						};
+						reader.readAsDataURL(file);
+					}
+				});
+
+				for (let i = 1; i <= 5; i++) {
+					document.getElementById(`colPick${i}`).addEventListener('input', (e) => {
+						this.config.palette[i - 1] = e.target.value;
+						this.triggerFullRender();
+					});
+				}
+
+				document.getElementById('selPalettePreset').addEventListener('change', (e) => {
+					const presets = {
+						cyber: ['#0f172a', '#38bdf8', '#818cf8', '#c084fc', '#f8fafc'],
+						monochrome: ['#000000', '#222222', '#777777', '#cccccc', '#ffffff'],
+						forest: ['#051f20', '#0b4025', '#24703c', '#5eb06d', '#a4e8b0'],
+						sunset: ['#2e0819', '#701626', '#b83b28', '#e38538', '#f2cf63'],
+						neon: ['#0d0221', '#0f5257', '#009fb7', '#60e1e0', '#f1f1f1']
+					};
+					const selected = presets[e.target.value];
+					if (selected) {
+						this.config.palette = [...selected];
+						for (let i = 1; i <= 5; i++) {
+							document.getElementById(`colPick${i}`).value = selected[i - 1];
+						}
+						this.triggerFullRender();
+					}
+				});
+
+				document.getElementById('slideNoiseScale').addEventListener('input', (e) => {
+					this.config.noiseScale = parseInt(e.target.value);
+					document.getElementById('valNoiseScale').innerText = `${e.target.value}px`;
+					this.triggerFullRender();
+				});
+
+				document.getElementById('slidePatternZoom').addEventListener('input', (e) => {
+					this.config.patternZoom = parseFloat(e.target.value);
+					document.getElementById('valPatternZoom').innerText = `${parseFloat(e.target.value).toFixed(1)}x`;
+					this.triggerFullRender();
+				});
+
+				// Optical Sliders
+				document.getElementById('selAlgorithm').addEventListener('change', (e) => {
+					this.config.algorithm = e.target.value;
+					document.getElementById('rowOpticalMu').style.display = (e.target.value === 'thimbleby') ? 'flex' : 'none';
+					this.triggerFullRender();
+				});
+
+				document.getElementById('slideSeparation').addEventListener('input', (e) => {
+					this.config.separation = parseInt(e.target.value);
+					document.getElementById('valSeparation').innerText = `${e.target.value}px`;
+					this.triggerFullRender();
+				});
+
+				document.getElementById('slideDepthFactor').addEventListener('input', (e) => {
+					this.config.depthFactor = parseInt(e.target.value);
+					document.getElementById('valDepthFactor').innerText = `${e.target.value}px`;
+					this.triggerFullRender();
+				});
+
+				document.getElementById('slideOpticalMu').addEventListener('input', (e) => {
+					this.config.opticalMu = parseFloat(e.target.value);
+					document.getElementById('valOpticalMu').innerText = parseFloat(e.target.value).toFixed(2);
+					this.triggerFullRender();
+				});
+
+				document.getElementById('chkHsr').addEventListener('change', (e) => {
+					this.config.useHsr = e.target.checked;
+					this.triggerFullRender();
+				});
+
+				document.getElementById('chkEyeGuide').addEventListener('change', (e) => {
+					this.renderer.eyeGuideEnabled = e.target.checked;
+					this.triggerFullRender();
+				});
+
+				document.getElementById('selResolutionMode').addEventListener('change', (e) => {
+					this.config.resolutionMode = e.target.value;
+					this.triggerFullRender();
+				});
+
+				// Reticle
+				document.getElementById('btnInspectorToggle').addEventListener('click', (e) => {
+					this.inspectorActive = !this.inspectorActive;
+					const btn = e.currentTarget;
+					btn.classList.toggle('btn-secondary');
+					btn.style.backgroundColor = this.inspectorActive ? 'var(--accent)' : 'var(--bg-input)';
+					this.dom.inspectorOverlay.classList.toggle('visible', this.inspectorActive);
+				});
+
+				this.dom.canvas.addEventListener('mousemove', (e) => {
+					if (!this.inspectorActive) return;
+					const rect = this.dom.canvas.getBoundingClientRect();
+					const scaleX = this.dom.canvas.width / rect.width;
+					const scaleY = this.dom.canvas.height / rect.height;
+
+					const cx = Math.floor((e.clientX - rect.left) * scaleX);
+					const cy = Math.floor((e.clientY - rect.top) * scaleY);
+
+					if (cx >= 0 && cx < this.dom.canvas.width && cy >= 0 && cy < this.dom.canvas.height) {
+						const idx = cy * this.dom.canvas.width + cx;
+						const z = this.depthProvider.depthBuffer[idx];
+
+						let s;
+						if (this.config.algorithm === 'linear') {
+							s = this.config.separation - Math.round(z * this.config.depthFactor);
+						} else {
+							const E = this.config.separation;
+							const mu = this.config.opticalMu;
+							s = Math.round((1.0 - mu * z) * E / (2.0 - mu * z));
+						}
+
+						this.dom.dispCoord.innerText = `X: ${cx}, Y: ${cy}`;
+						this.dom.dispDepth.innerText = (z !== undefined) ? z.toFixed(3) : '0.000';
+						this.dom.dispParallax.innerText = `${s} px`;
+					}
+				});
+
+				// Export
+				document.getElementById('btnExport').addEventListener('click', () => {
+					const link = document.createElement('a');
+					link.download = `SIRDS_${this.config.depthPreset}_${this.config.containerWidth}x${this.config.containerHeight}.png`;
+					link.href = this.dom.canvas.toDataURL('image/png');
+					link.click();
+				});
+			}
+
+			resolveDimensions() {
+				if (this.config.resolutionMode === 'auto') {
+					return {
+						width: Math.max(320, this.config.containerWidth),
+						height: Math.max(240, this.config.containerHeight)
+					};
+				}
+				const parts = this.config.resolutionMode.split('x');
+				return {
+					width: parseInt(parts[0]),
+					height: parseInt(parts[1])
+				};
+			}
+
+			triggerFullRender(forcedView) {
+				const { width, height } = this.resolveDimensions();
+
+				this.depthProvider.resize(width, height);
+				this.depthProvider.generateScene(this.config.depthPreset, this.config);
+
+				const E = this.config.separation;
+				this.patternProvider.generate(this.config.patternStyle, E, E, this.config);
+
+				document.getElementById('statusText').innerText = `Engine: ${this.config.algorithm.toUpperCase()} &bull; Map: ${this.config.depthPreset.toUpperCase()} &bull; ${width} &times; ${height}`;
+
+				const targetView = forcedView || this.renderer.activeView;
+				this.triggerRenderOnly(targetView);
+			}
+
+			triggerRenderOnly(viewMode) {
+				const { width, height } = this.resolveDimensions();
+				this.renderer.render(
+					viewMode,
+					this.depthProvider.depthBuffer,
+					this.patternProvider,
+					width,
+					height,
+					this.config,
+					this.sirdsEngine
+				);
+			}
+		}
+
+		window.addEventListener('DOMContentLoaded', () => {
+			window.appUI = new StereoAppUI();
+		});
+	</script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0da3e8d9d85862a',t:'MTc4MTc4NTE4Nw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>

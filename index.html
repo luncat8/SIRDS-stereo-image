@@ -1,0 +1,1670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>SIRDS Stereo Image Maker — WebGPU</title>
+	<style>
+		*{box-sizing:border-box;margin:0;padding:0}
+		body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#1a1a2e;color:#e0e0e0;padding:12px;min-height:100vh;display:flex;flex-direction:column;align-items:center}
+		h1{text-align:center;color:#fff;margin-bottom:4px;font-size:1.3em}
+		.sub{text-align:center;color:#888;margin-bottom:8px;font-size:.82em}
+		.gpu-badge{font-size:.7em;text-align:center;margin-bottom:8px;padding:3px 10px;border-radius:10px;display:inline-block}
+		.gpu-badge.ok{background:#0a3;color:#fff}
+		.gpu-badge.fail{background:#a33;color:#fff}
+		.main{display:flex;gap:14px;width:100%;max-width:1360px;flex:1;min-height:0}
+		.sidebar{width:280px;flex-shrink:0;background:#16213e;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;max-height:calc(100vh - 80px)}
+		.sec{background:#1a1a3e;border-radius:8px;padding:10px}
+		.sec-t{font-size:.72em;font-weight:700;color:#4af;text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px}
+		.ctrl{display:flex;flex-direction:column;gap:2px;margin-bottom:6px}
+		.ctrl:last-child{margin-bottom:0}
+		.ctrl label{font-size:.72em;color:#8af;font-weight:600;display:flex;justify-content:space-between}
+		.ctrl .v{color:#aaa}
+		input[type=range]{width:100%;accent-color:#4af;height:6px}
+		select,button{padding:7px 8px;background:#0f3460;color:#fff;border:1px solid #4af3;border-radius:5px;cursor:pointer;font-size:.82em;transition:background .15s}
+		select:hover,button:hover{background:#1a4a8a;border-color:#4af}
+		button.pri{background:#007acc;border:none;font-weight:700;padding:9px;width:100%}
+		button.pri:hover{background:#0098ff}
+		.chk{display:flex;align-items:center;gap:6px;font-size:.82em;margin-bottom:4px}
+		.chk input{accent-color:#4af}
+		.canvas-area{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
+		.tabs{display:flex;gap:3px}
+		.tabs button{flex:1;font-size:.78em;padding:5px}
+		.tabs button.act{background:#4af;color:#000;font-weight:700}
+		.cw{position:relative;flex:1;background:#000;border-radius:8px;overflow:hidden;border:2px solid #333;min-height:300px}
+		.cw canvas{display:block;width:100%;height:100%}
+		.cinfo{font-size:.7em;color:#666;text-align:center}
+		.err-disp{font-size:.72em;color:#fa4;padding:3px 0}
+		.err-bar{height:4px;background:#333;border-radius:2px;overflow:hidden;margin-top:2px}
+		.err-fill{height:100%;background:linear-gradient(90deg,#0f0,#ff0,#f00);transition:width .15s}
+		.cursor-ring{position:absolute;border:2px solid rgba(255,255,255,.5);border-radius:50%;pointer-events:none;transform:translate(-50%,-50%);display:none;z-index:10}
+		.ghost-block{border-top:1px dashed #335;margin-top:6px;padding-top:6px}
+		.hidden{display:none}
+		.gui-overlay{position:absolute;top:20px;right:20px;z-index:20;pointer-events:none;display:flex;flex-direction:column;gap:10px;align-items:flex-end}
+		.gui-overlay .sec{pointer-events:auto;background:rgba(26,26,62,0.8);backdrop-filter:blur(4px);border:1px solid #4af5;box-shadow:0 4px 15px rgba(0,0,0,0.5);width:260px;transition:opacity .2s,transform .2s}
+		.gui-overlay .sec.hidden{opacity:0;transform:translateY(-10px);pointer-events:none;display:none}
+		/* Stereo GUI mode: the real controls become a large invisible hit-layer, while
+		   a beveled temporary depth map is added into the stereogram. */
+		.gui-overlay.stereo-depth{top:50%;left:50%;right:auto;z-index:30;pointer-events:none;align-items:stretch;transform:translate(-50%,-50%);transform-origin:center center}
+		.gui-overlay.stereo-depth .sec{opacity:0!important;transform:none!important;pointer-events:auto;width:min(920px,calc(100vw - 72px));padding:36px;border-radius:36px;font-size:2.36em;box-shadow:none;backdrop-filter:none}
+		.gui-overlay.stereo-depth .sec.hidden{display:none!important;pointer-events:none}
+		.gui-overlay.stereo-depth .sec-t{font-size:.86em;margin-bottom:24px}
+		.gui-overlay.stereo-depth .ctrl{gap:14px;margin-bottom:26px}
+		.gui-overlay.stereo-depth .ctrl label{font-size:.86em}
+		.gui-overlay.stereo-depth select,.gui-overlay.stereo-depth button{font-size:1em;padding:24px 28px;border-radius:20px}
+		.gui-overlay.stereo-depth input[type=range]{height:44px}
+		.gui-overlay.stereo-depth .chk{font-size:1em;margin:16px 0;gap:20px}
+		.gui-overlay.stereo-depth .chk input{width:48px;height:48px}
+		@media(max-width:800px){.main{flex-direction:column}.sidebar{width:100%;max-height:none;flex-shrink:1}}
+	</style>
+</head>
+<body>
+	<h1>🔮 SIRDS Stereo Image Maker</h1>
+	<p class="sub">WebGPU-accelerated Error Back-Propagation stereogram · live drawing &amp; animation</p>
+	<span class="gpu-badge" id="gpuBadge">Initializing…</span>
+	<div class="main">
+		<div class="sidebar">
+			<div class="sec">
+				<div class="sec-t">Pattern</div>
+				<div class="ctrl"><label>Type</label>
+					<select id="sPatType"><option value="bw">B&amp;W Noise</option><option value="color">Color Noise</option><option value="stripe">Stripes</option></select>
+				</div>
+				<div class="ctrl"><label>Period <span class="v" id="vPeriod">100</span></label>
+					<input type="range" id="sPeriod" min="40" max="400" value="100">
+				</div>
+				<div class="ctrl"><label>Depth Scale <span class="v" id="vDepth">25</span></label>
+					<input type="range" id="sDepth" min="2" max="100" value="25">
+				</div>
+				<div class="ctrl"><label>Noise Grain <span class="v" id="vGrain">2</span></label>
+					<input type="range" id="sGrain" min="1" max="8" value="2">
+				</div>
+			</div>
+			<div class="sec">
+				<div class="sec-t">Algorithm</div>
+				<div class="ctrl"><label>Method</label>
+					<select id="sAlgo"><option value="relax">Error Back-Propagation (GPU)</option><option value="std">Standard (GPU)</option></select>
+				</div>
+				<div class="ctrl"><label>Iterations <span class="v" id="vIter">12</span></label>
+					<input type="range" id="sIter" min="1" max="60" value="12">
+				</div>
+				<div class="err-disp">Constraint Error: <span id="errVal">—</span>
+					<div class="err-bar"><div class="err-fill" id="errFill" style="width:0%"></div></div>
+				</div>
+			</div>
+			<div class="sec">
+				<div class="sec-t">Noise Animation</div>
+				<div class="chk"><input type="checkbox" id="cAnimX"><label for="cAnimX">X Movement</label></div>
+				<div class="chk"><input type="checkbox" id="cAnimRand"><label for="cAnimRand">Random Each Frame</label></div>
+			</div>
+			<div class="sec">
+				<div class="sec-t">Overlay GUI</div>
+				<div class="chk"><input type="checkbox" id="cStereoGUI"><label for="cStereoGUI">StereoGUI depth layer</label></div>
+				<div style="font-size:.72em;color:#9ab;line-height:1.35;margin-top:4px">When checked, the floating overlay is hidden and redrawn as a raised 3D depth surface. The invisible controls remain clickable.</div>
+			</div>
+			<div class="sec">
+				<div class="sec-t">Draw Tools (GPU Heightmap)</div>
+				<div class="ctrl"><label>Brush Mode</label>
+					<select id="sBrush"><option value="none">None (View)</option><option value="depth">Depth Sculpt (GPU)</option><option value="shade">Local Shade (CPU)</option></select>
+				</div>
+				<div class="ctrl"><label>Shape</label>
+					<select id="sBrushShape"><option value="0">Flat (Hard)</option><option value="1">Conical (Soft)</option></select>
+				</div>
+				<div class="ctrl"><label>Size <span class="v" id="vBSize">30</span></label>
+					<input type="range" id="sBSize" min="2" max="200" value="30">
+				</div>
+				<div class="ctrl"><label>Pressure <span class="v" id="vBVal">0.50</span></label>
+					<input type="range" id="sBVal" min="-100" max="100" value="50">
+				</div>
+
+				<!-- Ghost Reduction (only relevant for Local Shade) -->
+				<div class="ghost-block hidden" id="ghostBlock">
+					<div class="chk"><input type="checkbox" id="cGhost"><label for="cGhost">Ghost Reduced</label></div>
+					<div class="ctrl"><label>Method</label>
+						<select id="sGhostOpt">
+							<option value="A">A: Weaken Value (×)</option>
+							<option value="B">B: Remove Pixels</option>
+						</select>
+					</div>
+					<div class="ctrl" id="ghostAWrap"><label>Weaken Factor <span class="v" id="vGhostA">0.60</span></label>
+						<input type="range" id="sGhostA" min="50" max="70" value="60">
+					</div>
+					<div class="ctrl hidden" id="ghostBWrap"><label>Pixel Removal % <span class="v" id="vGhostB">60</span></label>
+						<input type="range" id="sGhostB" min="50" max="70" value="60">
+					</div>
+					<div class="ctrl"><label>Ghost Copies <span class="v" id="vGhostC">3</span></label>
+						<input type="range" id="sGhostC" min="1" max="6" value="3">
+					</div>
+				</div>
+
+				<button id="btnClearD">Clear Depth</button>
+				<button id="btnClearS" style="margin-top:4px">Clear Shade</button>
+			</div>
+			<div class="sec">
+				<div class="sec-t">Depth Presets</div>
+				<div class="ctrl"><label>Preset</label>
+					<select id="sPreset"><option value="shapes">Shapes</option><option value="torus">Torus</option><option value="text3d">3D Text</option><option value="spheres">Spheres</option><option value="none">Blank (Draw)</option></select>
+				</div>
+				<button class="pri" id="btnGen">▶ Generate</button>
+			</div>
+			<div class="sec">
+				<div class="sec-t">Save/Load Maps</div>
+				<div class="ctrl">
+					<button id="btnSaveD">💾 Save Depth Map</button>
+					<button id="btnLoadD" style="margin-top:4px">📂 Load Depth Map</button>
+					<input type="file" id="fLoadD" class="hidden" accept="image/webp,image/png">
+				</div>
+				<div class="ctrl" style="margin-top:8px">
+					<button id="btnSaveS">💾 Save Shade Map</button>
+					<button id="btnLoadS" style="margin-top:4px">📂 Load Shade Map</button>
+					<input type="file" id="fLoadS" class="hidden" accept="image/webp,image/png">
+				</div>
+			</div>
+		</div>
+		<div class="canvas-area">
+			<div class="tabs">
+				<button id="tStereo" class="act">Stereogram</button>
+				<button id="tDepth">Depth Map</button>
+				<button id="tShade">Shade Map</button>
+			</div>
+			<div class="cw" id="cw">
+				<canvas id="cv"></canvas>
+				<div class="cursor-ring" id="cursor"></div>
+				<div class="gui-overlay" id="guiOverlay"></div>
+			</div>
+			<div class="cinfo">Cross your eyes or look "through" the image to see 3D. Red dots = focus guides. Press 'G' to toggle Overlay. StereoGUI draws the active overlay page as real depth; mouse wheel cycles pages.</div>
+		</div>
+	</div>
+
+<script>
+
+// WGSL Shader Sources
+
+const WGSL_COMMON = `
+struct Cfg {
+	w: u32, h: u32, period: u32, depthScale: u32,
+	grain: u32, patType: u32, animOff: u32, animFrm: u32,
+	iters: u32, viewMode: u32, algo: u32, pad0: u32,
+};
+fn ihash(a: i32, b: i32) -> f32 {
+	var v = (u32(a) * 374761393u) + (u32(b) * 668265263u);
+	v = (v ^ (v >> 13u)) * 1274126177u;
+	v = v ^ (v >> 16u);
+	return f32(v) / 4294967296.0;
+}
+fn genNoise(x: u32, y: u32, c: Cfg) -> vec3u {
+	let g = max(1u, c.grain);
+	let qx = i32(((x + c.animOff) / g) * g);
+	let qy = i32((y / g) * g);
+	let fy = qy + (i32(c.animFrm) * 9973);
+	if (c.patType == 0u) {
+		let v = select(0u, 255u, ihash(qx, fy) > 0.5);
+		return vec3u(v, v, v);
+	} else if (c.patType == 1u) {
+		return vec3u(u32(ihash(qx, fy) * 256.0), u32(ihash(qx + 1, fy) * 256.0), u32(ihash(qx, fy + 1) * 256.0));
+	}
+	let v = u32((sin(f32(qx) * 0.15) + 1.0) * 127.0);
+	return vec3u((v + ((u32(qy) % 30u) * 4u)) & 255u, v & 255u, (255u - v) & 255u);
+}
+fn packRGBA(r: u32, g: u32, b: u32) -> u32 { return r | (g << 8u) | (b << 16u) | (255u << 24u); }
+`;
+
+// Brush shader – pressure is the direct additive delta (no scaling)
+const WGSL_BRUSH = `
+struct Brush {
+	x: f32, y: f32, radius: f32, pressure: f32,
+	minX: f32, maxX: f32, minY: f32, maxY: f32,
+	shape: f32, w: f32, h: f32, pad: f32
+};
+@group(0) @binding(0) var<storage,read_write> depth: array<u32>;
+@group(0) @binding(1) var<uniform> b: Brush;
+
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+	let idx = gid.x;
+	let minX = u32(b.minX);
+	let maxX = u32(b.maxX);
+	let minY = u32(b.minY);
+	let maxY = u32(b.maxY);
+	let bw = maxX - minX + 1u;
+	let bh = maxY - minY + 1u;
+	let total = bw * bh;
+	if (idx >= total) { return; }
+	
+	let lx = idx % bw;
+	let ly = idx / bw;
+	let x = minX + lx;
+	let y = minY + ly;
+	let w = u32(b.w);
+	let flatIdx = y * w + x;
+	
+	let px = f32(x) + 0.5;
+	let py = f32(y) + 0.5;
+	let dx = px - b.x;
+	let dy = py - b.y;
+	let dist = sqrt(dx*dx + dy*dy);
+	let radius = b.radius;
+	
+	if (dist < radius) {
+		let t = dist / radius;
+		var falloff: f32;
+		let shape = u32(b.shape);
+		if (shape == 0u) { 
+			falloff = 1.0; 
+		} else { 
+			falloff = 1.0 - t; 
+		}
+		
+		let current = f32(depth[flatIdx]);
+		let delta = b.pressure * falloff;
+		let newVal = clamp(current + delta, 0.0, 255.0);
+		depth[flatIdx] = u32(newVal);
+	}
+}`;
+
+const WGSL_SEP = WGSL_COMMON + `
+@group(0) @binding(0) var<storage,read> depth: array<u32>;
+@group(0) @binding(1) var<storage,read> guiDepth: array<u32>;
+@group(0) @binding(2) var<storage,read_write> sep: array<u32>;
+@group(0) @binding(3) var<uniform> c: Cfg;
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+	let i = gid.x;
+	if (i >= (c.w * c.h)) { return; }
+	let zv = min(depth[i] + guiDepth[i], 255u);
+	let z = f32(zv) / 255.0;
+	sep[i] = max(1u, u32(round(f32(c.period) - (z * f32(c.depthScale)))));
+}`;
+
+const WGSL_STD = WGSL_COMMON + `
+@group(0) @binding(0) var<storage,read> sep: array<u32>;
+@group(0) @binding(1) var<storage,read> shade: array<f32>;
+@group(0) @binding(2) var<storage,read_write> work: array<u32>;
+@group(0) @binding(3) var<storage,read_write> outpx: array<u32>;
+@group(0) @binding(4) var<uniform> c: Cfg;
+@compute @workgroup_size(1)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+	let y = gid.x;
+	if (y >= c.h) { return; }
+	let w = c.w;
+	let row = y * w;
+	for (var x = 0u; x < w; x++) { work[row + x] = x; }
+	for (var x = 0u; x < w; x++) {
+		let s = sep[row + x]; let r = x + s;
+		if (r < w) { work[row + r] = x; }
+	}
+	for (var x = 0u; x < w; x++) {
+		let idx = row + x;
+		if (work[idx] == x) {
+			let col = genNoise(x, y, c);
+			outpx[idx] = packRGBA(col.x, col.y, col.z);
+		} else {
+			outpx[idx] = outpx[row + work[idx]];
+		}
+	}
+	for (var x = 0u; x < w; x++) {
+		let idx = row + x;
+		let sh = shade[idx];
+		let p = outpx[idx];
+		outpx[idx] = packRGBA(
+			min(255u, u32(f32(p & 255u) * sh)),
+			min(255u, u32(f32((p >> 8u) & 255u) * sh)),
+			min(255u, u32(f32((p >> 16u) & 255u) * sh))
+		);
+	}
+}`;
+
+const WGSL_RELAX = WGSL_COMMON + `
+@group(0) @binding(0) var<storage,read> sep: array<u32>;
+@group(0) @binding(1) var<storage,read> shade: array<f32>;
+@group(0) @binding(2) var<storage,read_write> wk: array<u32>;
+@group(0) @binding(3) var<storage,read_write> outpx: array<u32>;
+@group(0) @binding(4) var<storage,read_write> errb: array<atomic<u32>>;
+@group(0) @binding(5) var<uniform> c: Cfg;
+
+fn avg2(a: u32, b: u32) -> u32 { return (a + b) / 2u; }
+fn avg2r(a: u32, b: u32) -> u32 { return (a + b + 1u) / 2u; }
+
+@compute @workgroup_size(1)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+	let y = gid.x;
+	if (y >= c.h) { return; }
+	let w = c.w;
+	let n = w * c.h;
+	let row = y * w;
+	let oG = n;
+	let oB = n * 2u;
+
+	for (var x = 0u; x < w; x++) {
+		let i = row + x;
+		let col = genNoise(x, y, c);
+		wk[i] = col.x; wk[oG + i] = col.y; wk[oB + i] = col.z;
+	}
+
+	for (var it = 0u; it < c.iters; it++) {
+		for (var x = 0u; x < w; x++) {
+			let s = sep[row + x]; let rx = x + s;
+			if (rx < w) {
+				let li = row + x; let ri = row + rx;
+				let ar = avg2(wk[li], wk[ri]); wk[li] = ar; wk[ri] = ar;
+				let ag = avg2(wk[oG+li], wk[oG+ri]); wk[oG+li] = ag; wk[oG+ri] = ag;
+				let ab = avg2(wk[oB+li], wk[oB+ri]); wk[oB+li] = ab; wk[oB+ri] = ab;
+			}
+		}
+		for (var xi = 0u; xi < w; xi++) {
+			let x = w - 1u - xi;
+			let s = sep[row + x]; let rx = x + s;
+			if (rx < w) {
+				let li = row + x; let ri = row + rx;
+				let ar = avg2(wk[li], wk[ri]); wk[li] = ar; wk[ri] = ar;
+				let ag = avg2(wk[oG+li], wk[oG+ri]); wk[oG+li] = ag; wk[oG+ri] = ag;
+				let ab = avg2(wk[oB+li], wk[oB+ri]); wk[oB+li] = ab; wk[oB+ri] = ab;
+			}
+		}
+		let nl = max(1u, u32(40.0 * (1.0 - (f32(it) / f32(c.iters)))));
+		let sh = i32((it * 7u) + (c.animFrm * 13u));
+		for (var x = 0u; x < w; x++) {
+			let i = row + x;
+			let ns = i32((ihash(i32(x) + sh, i32(y) + sh) - 0.5) * f32(nl) * 2.0);
+			wk[i] = u32(clamp(i32(wk[i]) + ns, 0, 255));
+			wk[oG+i] = u32(clamp(i32(wk[oG+i]) + ns, 0, 255));
+			wk[oB+i] = u32(clamp(i32(wk[oB+i]) + ns, 0, 255));
+		}
+	}
+
+	for (var x = 0u; x < w; x++) {
+		let s = sep[row + x]; let rx = x + s;
+		if (rx < w) {
+			let li = row + x; let ri = row + rx;
+			let ar = avg2r(wk[li], wk[ri]); wk[li] = ar; wk[ri] = ar;
+			let ag = avg2r(wk[oG+li], wk[oG+ri]); wk[oG+li] = ag; wk[oG+ri] = ag;
+			let ab = avg2r(wk[oB+li], wk[oB+ri]); wk[oB+li] = ab; wk[oB+ri] = ab;
+		}
+	}
+
+	var re = 0u; var rc = 0u;
+	for (var x = 0u; x < w; x++) {
+		let i = row + x;
+		let s = sep[i]; let rx = x + s;
+		if (rx < w) {
+			let d = i32(wk[i]) - i32(wk[row + rx]);
+			re += u32(abs(d));
+			rc += 1u;
+		}
+		let sv = shade[i];
+		outpx[i] = packRGBA(
+			min(255u, u32(f32(wk[i]) * sv)),
+			min(255u, u32(f32(wk[oG+i]) * sv)),
+			min(255u, u32(f32(wk[oB+i]) * sv))
+		);
+	}
+	atomicAdd(&errb[0], re);
+	atomicAdd(&errb[1], rc);
+}`;
+
+const WGSL_VIS = WGSL_COMMON + `
+@group(0) @binding(0) var<storage,read> depth: array<u32>;
+@group(0) @binding(1) var<storage,read> guiDepth: array<u32>;
+@group(0) @binding(2) var<storage,read> shade: array<f32>;
+@group(0) @binding(3) var<storage,read_write> outpx: array<u32>;
+@group(0) @binding(4) var<uniform> c: Cfg;
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3u) {
+	let i = gid.x;
+	if (i >= (c.w * c.h)) { return; }
+	var v: u32;
+	if (c.viewMode == 1u) { v = min(depth[i] + guiDepth[i], 255u); }
+	else { v = u32(clamp(shade[i] * 128.0, 0.0, 255.0)); }
+	outpx[i] = packRGBA(v, v, v);
+}`;
+
+const WGSL_RENDER = WGSL_COMMON + `
+@group(0) @binding(0) var<storage,read> pixels: array<u32>;
+@group(0) @binding(1) var<uniform> c: Cfg;
+struct Vo { @builtin(position) pos: vec4f };
+
+@vertex fn vs(@builtin(vertex_index) vi: u32) -> Vo {
+	var p = array<vec2f, 3>(vec2f(-1,-1), vec2f(3,-1), vec2f(-1,3));
+	var o: Vo; o.pos = vec4f(p[vi], 0, 1); return o;
+}
+
+@fragment fn fs(in: Vo) -> @location(0) vec4f {
+	let x = u32(in.pos.x);
+	let y = u32(in.pos.y);
+	if ((x >= c.w) || (y >= c.h)) { return vec4f(0.1, 0.1, 0.12, 1.0); }
+	if (c.viewMode == 0u) {
+		let cx1 = i32(c.w / 2u) - i32(c.period / 2u);
+		let cx2 = cx1 + i32(c.period);
+		let dy = i32(y) - 8;
+		if (abs(dy) <= 4) {
+			let d1 = i32(x) - cx1; let d2 = i32(x) - cx2;
+			if ((((d1*d1)+(dy*dy)) <= 16) || (((d2*d2)+(dy*dy)) <= 16)) { return vec4f(1,0.15,0.15,1); }
+		}
+	}
+	let p = pixels[(y * c.w) + x];
+	return vec4f(f32(p&255u)/255.0, f32((p>>8u)&255u)/255.0, f32((p>>16u)&255u)/255.0, 1.0);
+}`;
+
+
+
+// DepthMap (CPU side management)
+
+class DepthMap {
+	constructor(w, h) {
+		this.w = w; this.h = h;
+		this.depth = new Uint8Array(w * h);
+		this.shade = new Float32Array(w * h);
+		this.shade.fill(1.0);
+		this.dirty = true;
+	}
+	resize(w, h) {
+		if (w === this.w && h === this.h) return;
+		this.w = w; this.h = h;
+		this.depth = new Uint8Array(w * h);
+		this.shade = new Float32Array(w * h);
+		this.shade.fill(1.0);
+		this.dirty = true;
+	}
+	clearDepth() { this.depth.fill(0); this.dirty = true; }
+	clearShade() { this.shade.fill(1.0); this.dirty = true; }
+	
+	// Additive shade painting. density<1 deterministically drops pixels (Option B).
+	addShadeDelta(cx, cy, radius, delta, density = 1.0) {
+		const w = this.w, h = this.h, r2 = radius * radius, sh = this.shade;
+		const y0 = Math.max(0, Math.floor(cy - radius));
+		const y1 = Math.min(h - 1, Math.ceil(cy + radius));
+		const x0 = Math.max(0, Math.floor(cx - radius));
+		const x1 = Math.min(w - 1, Math.ceil(cx + radius));
+		const useDensity = density < 0.999;
+		for (let y = y0; y <= y1; y++) {
+			const row = y * w;
+			const dy = y - cy;
+			for (let x = x0; x <= x1; x++) {
+				const dx = x - cx;
+				const dd = dx*dx + dy*dy;
+				if (dd <= r2) {
+					if (useDensity) {
+						// deterministic per-pixel hash (stable, no flicker)
+						let hsh = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0;
+						hsh = Math.imul(hsh ^ (hsh >>> 13), 1274126177);
+						hsh = (hsh ^ (hsh >>> 16)) >>> 0;
+						const rnd = hsh / 4294967296;
+						if (rnd > density) continue;
+					}
+					const t = 1 - Math.sqrt(dd) / radius;
+					const s = t * t * (3 - 2*t);
+					sh[row + x] = Math.max(0, Math.min(2, sh[row + x] + delta * s));
+				}
+			}
+		}
+		this.dirty = true;
+	}
+	
+	generatePreset(type) {
+		const w = this.w, h = this.h, d = this.depth;
+		d.fill(0);
+		if (type === 'shapes') {
+			for (let y = 0; y < h; y++) {
+				const row = y * w;
+				for (let x = 0; x < w; x++) {
+					if (x >= w * .15 && x < w * .4 && y >= h * .2 && y < h * .65) d[row + x] = 140;
+					const ccx = w * .65, ccy = h * .45, cr = Math.min(w, h) * .2;
+					const dx = x - ccx, dy = y - ccy;
+					if (dx * dx + dy * dy < cr * cr && 230 > d[row + x]) d[row + x] = 230;
+				}
+			}
+		} else if (type === 'torus') {
+			const cx = w / 2, cy = h / 2, maxR = Math.min(w, h) * .3, minR = maxR * .4;
+			for (let y = 0; y < h; y++) {
+				const row = y * w;
+				for (let x = 0; x < w; x++) {
+					const dx = x - cx, dy = y - cy, dist = Math.sqrt(dx * dx + dy * dy);
+					if (dist >= minR && dist <= maxR) {
+						const mid = (minR + maxR) / 2, th = (maxR - minR) / 2;
+						d[row + x] = (Math.max(0, 1 - Math.abs(dist - mid) / th) * 230) | 0;
+					}
+				}
+			}
+		} else if (type === 'text3d') {
+			const oc = document.createElement('canvas');
+			oc.width = w; oc.height = h;
+			const ox = oc.getContext('2d');
+			ox.fillStyle = '#000'; ox.fillRect(0, 0, w, h);
+			const fs = Math.min(w / 4, h * .55) | 0;
+			ox.font = `bold ${fs}px sans-serif`;
+			ox.textAlign = 'center'; ox.textBaseline = 'middle';
+			ox.fillStyle = 'rgb(150,150,150)'; ox.fillText('3D', w / 2 - 4, h / 2 - 4);
+			ox.fillStyle = '#fff'; ox.fillText('3D', w / 2, h / 2);
+			const id = ox.getImageData(0, 0, w, h).data;
+			for (let i = 0; i < w * h; i++) d[i] = id[i * 4];
+		} else if (type === 'spheres') {
+			const sp = [
+				{ cx: w * .22, cy: h * .4, r: Math.min(w, h) * .16, z: 200 },
+				{ cx: w * .52, cy: h * .35, r: Math.min(w, h) * .22, z: 160 },
+				{ cx: w * .78, cy: h * .55, r: Math.min(w, h) * .13, z: 240 }
+			];
+			for (let y = 0; y < h; y++) {
+				const row = y * w;
+				for (let x = 0; x < w; x++) {
+					for (const s of sp) {
+						const dx = x - s.cx, dy = y - s.cy, d2 = dx * dx + dy * dy;
+						if (d2 < s.r * s.r) {
+							const v = ((1 - Math.sqrt(d2) / s.r) * s.z) | 0;
+							if (v > d[row + x]) d[row + x] = v;
+						}
+					}
+				}
+			}
+		}
+		this.dirty = true;
+	}
+}
+
+
+
+// GpuEngine — WebGPU management
+
+class GpuEngine {
+	constructor() {
+		this._dev = null; this._ctx = null; this._fmt = null;
+		this._bw = 0; this._bh = 0;
+		this._lastErr = -1; this._errPending = false;
+		this._u32Stage = null;
+		this._brushQueue = [];
+		this._guiWasActive = false;
+	}
+
+	async init(canvas) {
+		if (!navigator.gpu) throw new Error('WebGPU not supported');
+		const adapter = await navigator.gpu.requestAdapter();
+		if (!adapter) throw new Error('No GPU adapter');
+		
+		this._dev = await adapter.requestDevice({ requiredFeatures: [], requiredLimits: {} });
+		this._dev.lost.then((info) => {
+			console.error('WebGPU device lost:', info.message, info.reason);
+		});
+		
+		this._adapterInfo = adapter.info || {};
+		this._ctx = canvas.getContext('webgpu');
+		if (!this._ctx) throw new Error('WebGPU context missing');
+		
+		this._fmt = navigator.gpu.getPreferredCanvasFormat();
+		this._ctx.configure({
+			device: this._dev,
+			format: this._fmt,
+			alphaMode: 'opaque',
+		});
+		this._createPipelines();
+	}
+
+	get adapterName() {
+		const i = this._adapterInfo;
+		return (i.vendor || '') + ' ' + (i.architecture || '') + ' ' + (i.device || '');
+	}
+
+	_createPipelines() {
+		const d = this._dev;
+		const mk = (code) => d.createShaderModule({ code });
+		
+		const brushModule = mk(WGSL_BRUSH);
+		const brushBGL = d.createBindGroupLayout({
+			entries: [
+				{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+				{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+			]
+		});
+		this._pBrush = d.createComputePipeline({
+			layout: d.createPipelineLayout({ bindGroupLayouts: [brushBGL] }),
+			compute: { module: brushModule, entryPoint: 'main' }
+		});
+		
+		this._pSep = d.createComputePipeline({ layout: 'auto', compute: { module: mk(WGSL_SEP), entryPoint: 'main' } });
+		this._pStd = d.createComputePipeline({ layout: 'auto', compute: { module: mk(WGSL_STD), entryPoint: 'main' } });
+		this._pRelax = d.createComputePipeline({ layout: 'auto', compute: { module: mk(WGSL_RELAX), entryPoint: 'main' } });
+		this._pVis = d.createComputePipeline({ layout: 'auto', compute: { module: mk(WGSL_VIS), entryPoint: 'main' } });
+		
+		const rm = mk(WGSL_RENDER);
+		this._pRender = d.createRenderPipeline({
+			layout: 'auto',
+			vertex: { module: rm, entryPoint: 'vs' },
+			fragment: { module: rm, entryPoint: 'fs', targets: [{ format: this._fmt }] },
+			primitive: { topology: 'triangle-list' },
+		});
+	}
+
+	_ensureBuffers(w, h) {
+		if (w === this._bw && h === this._bh) return;
+		this._bw = w; this._bh = h;
+		const d = this._dev, n = w * h;
+
+		if (this._depthBuf) {
+			this._errPending = false;
+			this._depthBuf.destroy(); this._shadeBuf.destroy();
+			this._guiDepthBuf.destroy(); this._sepBuf.destroy(); this._workBuf.destroy();
+			this._outBuf.destroy(); this._errBuf.destroy();
+			this._errStageBuf.destroy(); this._paramsBuf.destroy();
+			if (this._brushUniformBuf) this._brushUniformBuf.destroy();
+		}
+
+		const S = GPUBufferUsage.STORAGE, C = GPUBufferUsage.COPY_DST, R = GPUBufferUsage.COPY_SRC, U = GPUBufferUsage.UNIFORM;
+		this._depthBuf = d.createBuffer({ size: n * 4, usage: S | C });
+		this._guiDepthBuf = d.createBuffer({ size: n * 4, usage: S | C });
+		this._shadeBuf = d.createBuffer({ size: n * 4, usage: S | C });
+		this._sepBuf = d.createBuffer({ size: n * 4, usage: S });
+		this._workBuf = d.createBuffer({ size: n * 4 * 3, usage: S });
+		this._outBuf = d.createBuffer({ size: n * 4, usage: S });
+		this._errBuf = d.createBuffer({ size: 8, usage: S | C | R });
+		this._errStageBuf = d.createBuffer({ size: 8, usage: GPUBufferUsage.MAP_READ | C });
+		this._paramsBuf = d.createBuffer({ size: 48, usage: U | C });
+		this._brushUniformBuf = d.createBuffer({ size: 48, usage: U | C });
+
+		this._u32Stage = new Uint32Array(n);
+		this._paramStage = new Uint32Array(12);
+		this._brushStage = new Float32Array(12);
+		this._guiWasActive = false;
+
+		this._createBindGroups();
+	}
+
+	_createBindGroups() {
+		const d = this._dev;
+		const b = (buf) => ({ buffer: buf });
+		
+		this._bgBrush = d.createBindGroup({
+			layout: this._pBrush.getBindGroupLayout(0),
+			entries: [
+				{ binding: 0, resource: b(this._depthBuf) },
+				{ binding: 1, resource: b(this._brushUniformBuf) },
+			]
+		});
+
+		this._bgSep = d.createBindGroup({
+			layout: this._pSep.getBindGroupLayout(0),
+			entries: [
+				{ binding: 0, resource: b(this._depthBuf) },
+				{ binding: 1, resource: b(this._guiDepthBuf) },
+				{ binding: 2, resource: b(this._sepBuf) },
+				{ binding: 3, resource: b(this._paramsBuf) },
+			]
+		});
+		this._bgStd = d.createBindGroup({
+			layout: this._pStd.getBindGroupLayout(0),
+			entries: [
+				{ binding: 0, resource: b(this._sepBuf) },
+				{ binding: 1, resource: b(this._shadeBuf) },
+				{ binding: 2, resource: b(this._workBuf) },
+				{ binding: 3, resource: b(this._outBuf) },
+				{ binding: 4, resource: b(this._paramsBuf) },
+			]
+		});
+		this._bgRelax = d.createBindGroup({
+			layout: this._pRelax.getBindGroupLayout(0),
+			entries: [
+				{ binding: 0, resource: b(this._sepBuf) },
+				{ binding: 1, resource: b(this._shadeBuf) },
+				{ binding: 2, resource: b(this._workBuf) },
+				{ binding: 3, resource: b(this._outBuf) },
+				{ binding: 4, resource: b(this._errBuf) },
+				{ binding: 5, resource: b(this._paramsBuf) },
+			]
+		});
+		this._bgVis = d.createBindGroup({
+			layout: this._pVis.getBindGroupLayout(0),
+			entries: [
+				{ binding: 0, resource: b(this._depthBuf) },
+				{ binding: 1, resource: b(this._guiDepthBuf) },
+				{ binding: 2, resource: b(this._shadeBuf) },
+				{ binding: 3, resource: b(this._outBuf) },
+				{ binding: 4, resource: b(this._paramsBuf) },
+			]
+		});
+		this._bgRender = d.createBindGroup({
+			layout: this._pRender.getBindGroupLayout(0),
+			entries: [
+				{ binding: 0, resource: b(this._outBuf) },
+				{ binding: 1, resource: b(this._paramsBuf) },
+			]
+		});
+	}
+
+	// pressure now is the direct delta to add (0-255 range)
+	queueBrush(x, y, radius, pressure, shape) {
+		if (this._bw === 0 || this._bh === 0) return;
+		this._brushQueue.push({ x, y, radius, pressure, shape, w: this._bw, h: this._bh });
+	}
+
+	render(depthMap, cfg) {
+		const w = depthMap.w, h = depthMap.h, d = this._dev;
+		if (w < 1 || h < 1) return;
+		this._ensureBuffers(w, h);
+
+		if (depthMap.dirty) {
+			const src = depthMap.depth, dst = this._u32Stage;
+			for (let i = 0, n = w * h; i < n; i++) dst[i] = src[i];
+			d.queue.writeBuffer(this._depthBuf, 0, dst.buffer, dst.byteOffset, w * h * 4);
+			d.queue.writeBuffer(this._shadeBuf, 0, depthMap.shade.buffer, depthMap.shade.byteOffset, w * h * 4);
+			depthMap.dirty = false;
+		}
+
+		// Temporary StereoGUI depth is kept in a separate GPU buffer so it can be
+		// added at separation/visualization time without overwriting GPU-painted depth.
+		if (cfg.guiDepth && cfg.guiDepth.length === w * h) {
+			const src = cfg.guiDepth, dst = this._u32Stage;
+			for (let i = 0, n = w * h; i < n; i++) dst[i] = src[i];
+			d.queue.writeBuffer(this._guiDepthBuf, 0, dst.buffer, dst.byteOffset, w * h * 4);
+			this._guiWasActive = true;
+		} else if (this._guiWasActive) {
+			this._u32Stage.fill(0, 0, w * h);
+			d.queue.writeBuffer(this._guiDepthBuf, 0, this._u32Stage.buffer, this._u32Stage.byteOffset, w * h * 4);
+			this._guiWasActive = false;
+		}
+
+		const enc = d.createCommandEncoder();
+
+		if (this._brushQueue.length > 0) {
+			for (const b of this._brushQueue) {
+				const minX = Math.max(0, Math.floor(b.x - b.radius));
+				const maxX = Math.min(b.w - 1, Math.ceil(b.x + b.radius));
+				const minY = Math.max(0, Math.floor(b.y - b.radius));
+				const maxY = Math.min(b.h - 1, Math.ceil(b.y + b.radius));
+				const areaW = maxX - minX + 1;
+				const areaH = maxY - minY + 1;
+				const totalPixels = areaW * areaH;
+				if (totalPixels <= 0) continue;
+				
+				const s = this._brushStage;
+				s[0] = b.x; s[1] = b.y; s[2] = b.radius; s[3] = b.pressure;
+				s[4] = minX; s[5] = maxX; s[6] = minY; s[7] = maxY;
+				s[8] = b.shape; s[9] = b.w; s[10] = b.h; s[11] = 0;
+				d.queue.writeBuffer(this._brushUniformBuf, 0, s.buffer, s.byteOffset, 48);
+				
+				const cp = enc.beginComputePass({ label: 'brush' });
+				cp.setPipeline(this._pBrush);
+				cp.setBindGroup(0, this._bgBrush);
+				cp.dispatchWorkgroups(Math.ceil(totalPixels / 256));
+				cp.end();
+			}
+			this._brushQueue = [];
+		}
+
+		const PT = { bw: 0, color: 1, stripe: 2 };
+		const p = this._paramStage;
+		p[0] = w; p[1] = h; p[2] = cfg.basePeriod; p[3] = cfg.depthScale;
+		p[4] = cfg.grain; p[5] = PT[cfg.patType] || 0;
+		p[6] = cfg.animOffset; p[7] = cfg.animFrame;
+		p[8] = cfg.iterations; p[9] = cfg.viewMode;
+		p[10] = cfg.algo === 'relax' ? 1 : 0; p[11] = 0;
+		d.queue.writeBuffer(this._paramsBuf, 0, p.buffer, p.byteOffset, 48);
+
+		enc.clearBuffer(this._errBuf);
+
+		if (cfg.viewMode === 0) {
+			const cp1 = enc.beginComputePass({ label: 'sep' });
+			cp1.setPipeline(this._pSep);
+			cp1.setBindGroup(0, this._bgSep);
+			cp1.dispatchWorkgroups(Math.ceil(w * h / 256));
+			cp1.end();
+
+			const cp2 = enc.beginComputePass({ label: 'sirds' });
+			if (cfg.algo === 'relax') {
+				cp2.setPipeline(this._pRelax);
+				cp2.setBindGroup(0, this._bgRelax);
+				cp2.dispatchWorkgroups(h);
+			} else {
+				cp2.setPipeline(this._pStd);
+				cp2.setBindGroup(0, this._bgStd);
+				cp2.dispatchWorkgroups(h);
+			}
+			cp2.end();
+		} else {
+			const cp = enc.beginComputePass({ label: 'vis' });
+			cp.setPipeline(this._pVis);
+			cp.setBindGroup(0, this._bgVis);
+			cp.dispatchWorkgroups(Math.ceil(w * h / 256));
+			cp.end();
+		}
+
+		const doErrCopy = !this._errPending;
+		if (doErrCopy) {
+			enc.copyBufferToBuffer(this._errBuf, 0, this._errStageBuf, 0, 8);
+		}
+
+		const rp = enc.beginRenderPass({
+			label: 'render',
+			colorAttachments: [{
+				view: this._ctx.getCurrentTexture().createView(),
+				loadOp: 'clear',
+				clearValue: { r: 0.1, g: 0.1, b: 0.12, a: 1 },
+				storeOp: 'store',
+			}],
+		});
+		rp.setPipeline(this._pRender);
+		rp.setBindGroup(0, this._bgRender);
+		rp.draw(3);
+		rp.end();
+
+		d.queue.submit([enc.finish()]);
+
+		if (doErrCopy) {
+			this._readbackError();
+		}
+	}
+
+	async _readbackError() {
+		if (this._errPending) return;
+		this._errPending = true;
+		try {
+			await this._errStageBuf.mapAsync(GPUMapMode.READ);
+			const d = new Uint32Array(this._errStageBuf.getMappedRange());
+			this._lastErr = d[1] > 0 ? d[0] / d[1] : -1;
+			this._errStageBuf.unmap();
+		} catch (e) {}
+		this._errPending = false;
+	}
+
+	get lastError() { return this._lastErr; }
+}
+
+
+
+// App — UI, input, orchestration
+
+class App {
+	constructor() {
+		this.canvas = document.getElementById('cv');
+		this.depthMap = new DepthMap(1, 1);
+		this.gpu = new GpuEngine();
+		this.viewMode = 'stereo';
+		this.animFrame = 0;
+		this.needsRender = true;
+		this.drawing = false;
+		this.lastMx = -1; this.lastMy = -1;
+		this._lastTime = 0;
+		this.guiDepthCanvas = document.createElement('canvas');
+		this.guiDepthCtx = this.guiDepthCanvas.getContext('2d', { willReadFrequently: true });
+		this.guiDepth = new Uint8Array(0);
+		this._init();
+	}
+
+	async _init() {
+		const badge = document.getElementById('gpuBadge');
+		try {
+			await this.gpu.init(this.canvas);
+			badge.textContent = '⚡ WebGPU Active — ' + (this.gpu.adapterName.trim() || 'Unknown GPU');
+			badge.className = 'gpu-badge ok';
+		} catch (e) {
+			badge.textContent = '✗ WebGPU unavailable: ' + e.message;
+			badge.className = 'gpu-badge fail';
+			console.error(e);
+			return;
+		}
+		this._bindUI();
+		this._bindCanvas();
+		this._initOverlay();
+		this._resizeCanvas();
+		new ResizeObserver(() => this._resizeCanvas()).observe(document.getElementById('cw'));
+		this._loop();
+	}
+
+	_readConfig() {
+		const VM = { stereo: 0, depth: 1, shade: 2 };
+		const val = +document.getElementById('sBVal').value;
+		return {
+			patType: document.getElementById('sPatType').value,
+			basePeriod: +document.getElementById('sPeriod').value,
+			depthScale: +document.getElementById('sDepth').value,
+			grain: +document.getElementById('sGrain').value,
+			algo: document.getElementById('sAlgo').value,
+			iterations: +document.getElementById('sIter').value,
+			animX: document.getElementById('cAnimX').checked,
+			animRand: document.getElementById('cAnimRand').checked,
+			stereoGUI: document.getElementById('cStereoGUI').checked,
+			brushType: document.getElementById('sBrush').value,
+			brushSize: +document.getElementById('sBSize').value,
+			brushPressure: val / 100.0, // -1..1
+			brushShape: +document.getElementById('sBrushShape').value,
+			preset: document.getElementById('sPreset').value,
+			animOffset: this.animFrame,
+			animFrame: this.animFrame,
+			viewMode: VM[this.viewMode] || 0,
+			// Ghost reduction
+			ghost: document.getElementById('cGhost').checked,
+			ghostOpt: document.getElementById('sGhostOpt').value, // 'A' or 'B'
+			ghostA: +document.getElementById('sGhostA').value / 100, // weaken factor 0.5-0.7
+			ghostB: +document.getElementById('sGhostB').value / 100, // removal 0.5-0.7
+			ghostCopies: +document.getElementById('sGhostC').value,
+		};
+	}
+
+	_bindUI() {
+		const sliders = [
+			['sPeriod', 'vPeriod'], ['sDepth', 'vDepth'], ['sGrain', 'vGrain'],
+			['sIter', 'vIter'], ['sBSize', 'vBSize'], ['sGhostC', 'vGhostC']
+		];
+		for (const [sid, vid] of sliders) {
+			document.getElementById(sid).addEventListener('input', () => {
+				document.getElementById(vid).textContent = document.getElementById(sid).value;
+				this.needsRender = true;
+			});
+		}
+		const pSlider = document.getElementById('sBVal');
+		const pDisp = document.getElementById('vBVal');
+		pSlider.addEventListener('input', () => {
+			pDisp.textContent = (+pSlider.value / 100).toFixed(2);
+		});
+		// Ghost factor displays
+		document.getElementById('sGhostA').addEventListener('input', (e) => {
+			document.getElementById('vGhostA').textContent = (+e.target.value / 100).toFixed(2);
+		});
+		document.getElementById('sGhostB').addEventListener('input', (e) => {
+			document.getElementById('vGhostB').textContent = e.target.value;
+		});
+		// Show/hide A vs B controls
+		document.getElementById('sGhostOpt').addEventListener('change', (e) => {
+			const isA = e.target.value === 'A';
+			document.getElementById('ghostAWrap').classList.toggle('hidden', !isA);
+			document.getElementById('ghostBWrap').classList.toggle('hidden', isA);
+		});
+		
+		for (const id of ['sPatType', 'sAlgo', 'cAnimX', 'cAnimRand', 'cStereoGUI', 'sBrushShape']) {
+			document.getElementById(id).addEventListener('change', () => { this.needsRender = true; });
+		}
+		document.getElementById('cStereoGUI').addEventListener('change', () => {
+			this._updateOverlayVisibility();
+			this.needsRender = true;
+		});
+		const tabs = { tStereo: 'stereo', tDepth: 'depth', tShade: 'shade' };
+		for (const [id, mode] of Object.entries(tabs)) {
+			document.getElementById(id).addEventListener('click', () => {
+				this.viewMode = mode;
+				for (const tid of Object.keys(tabs))
+					document.getElementById(tid).classList.toggle('act', tid === id);
+				this.needsRender = true;
+			});
+		}
+		document.getElementById('sPreset').addEventListener('change', () => {
+			this.depthMap.generatePreset(document.getElementById('sPreset').value);
+			this.needsRender = true;
+		});
+		document.getElementById('btnGen').addEventListener('click', () => {
+			this.depthMap.generatePreset(document.getElementById('sPreset').value);
+			this.needsRender = true;
+		});
+		document.getElementById('btnClearD').addEventListener('click', () => {
+			this.depthMap.clearDepth(); this.needsRender = true;
+		});
+		document.getElementById('btnClearS').addEventListener('click', () => {
+			this.depthMap.clearShade(); this.needsRender = true;
+		});
+		document.getElementById('sBrush').addEventListener('change', () => {
+			const mode = document.getElementById('sBrush').value;
+			document.getElementById('cursor').style.display = mode !== 'none' ? 'block' : 'none';
+			// Show ghost block only for shade brush
+			document.getElementById('ghostBlock').classList.toggle('hidden', mode !== 'shade');
+		});
+		document.getElementById('btnSaveD').addEventListener('click', () => this._saveMap('depth'));
+		document.getElementById('btnSaveS').addEventListener('click', () => this._saveMap('shade'));
+		document.getElementById('btnLoadD').addEventListener('click', () => document.getElementById('fLoadD').click());
+		document.getElementById('btnLoadS').addEventListener('click', () => document.getElementById('fLoadS').click());
+		document.getElementById('fLoadD').addEventListener('change', (e) => {
+			if (e.target.files[0]) this._loadMap('depth', e.target.files[0]);
+		});
+		document.getElementById('fLoadS').addEventListener('change', (e) => {
+			if (e.target.files[0]) this._loadMap('shade', e.target.files[0]);
+		});
+	}
+
+	_bindCanvas() {
+		const cv = this.canvas;
+		const cursor = document.getElementById('cursor');
+
+		const toPixel = (e) => {
+			const r = cv.getBoundingClientRect();
+			return {
+				x: ((e.clientX - r.left) / r.width * cv.width),
+				y: ((e.clientY - r.top) / r.height * cv.height)
+			};
+		};
+
+		cv.addEventListener('mousemove', (e) => {
+			const cfg = this._readConfig();
+			if (cfg.brushType === 'none') {
+				cursor.style.display = 'none';
+				return;
+			}
+			const p = toPixel(e);
+			const r = cv.getBoundingClientRect();
+			const scale = r.width / cv.width;
+			const sz = cfg.brushSize * 2 * scale;
+			const wr = cv.parentElement.getBoundingClientRect();
+			cursor.style.display = 'block';
+			cursor.style.left = (e.clientX - wr.left) + 'px';
+			cursor.style.top = (e.clientY - wr.top) + 'px';
+			cursor.style.width = sz + 'px';
+			cursor.style.height = sz + 'px';
+			
+			if (this.drawing) {
+				this.currX = p.x;
+				this.currY = p.y;
+			}
+		});
+
+		cv.addEventListener('mousedown', (e) => {
+			const cfg = this._readConfig();
+			if (cfg.brushType === 'none') return;
+			this.drawing = true;
+			const p = toPixel(e);
+			this.prevX = this.currX = p.x;
+			this.prevY = this.currY = p.y;
+		});
+
+		const stop = () => { this.drawing = false; };
+		window.addEventListener('mouseup', stop);
+		cv.addEventListener('mouseleave', () => { if (!this.drawing) cursor.style.display = 'none'; });
+
+		// Swipe tracking for overlay cycling
+		let touchStartY = 0;
+
+		cv.addEventListener('touchstart', (e) => {
+			e.preventDefault();
+			touchStartY = e.touches[0].clientY;
+			const cfg = this._readConfig();
+			if (cfg.brushType === 'none') return;
+			this.drawing = true;
+			const p = toPixel(e.touches[0]);
+			this.prevX = this.currX = p.x;
+			this.prevY = this.currY = p.y;
+		}, { passive: false });
+
+		cv.addEventListener('touchmove', (e) => {
+			e.preventDefault();
+			if (!this.drawing) return;
+			const p = toPixel(e.touches[0]);
+			this.currX = p.x;
+			this.currY = p.y;
+		}, { passive: false });
+
+		cv.addEventListener('touchend', (e) => {
+			if (this.overlayVisible) {
+				const touchEndY = e.changedTouches[0].clientY;
+				const deltaY = touchEndY - touchStartY;
+				if (Math.abs(deltaY) > 50) {
+					this._cycleOverlay(deltaY > 0 ? 1 : -1);
+				}
+			}
+			stop();
+		});
+
+		// Overlay GUI Control: Cycle sections with wheel
+		cv.addEventListener('wheel', (e) => {
+			if (this.overlayVisible) {
+				e.preventDefault();
+				this._cycleOverlay(e.deltaY > 0 ? 1 : -1);
+			}
+		}, { passive: false });
+	}
+
+	_initOverlay() {
+		const overlay = document.getElementById('guiOverlay');
+		const sections = document.querySelectorAll('.sidebar .sec');
+		this.overlaySections = [];
+		this.overlayIndex = 0;
+		this.overlayVisible = true; // Visible by default for discoverability
+
+		sections.forEach((sec) => {
+			const clone = sec.cloneNode(true);
+			clone.classList.add('hidden');
+			// Labels in cloned checkbox rows must target the invisible clone/proxy,
+			// not the real sidebar input, so proxy clicks can be deterministic.
+			clone.querySelectorAll('label[for]').forEach(label => {
+				label.setAttribute('data-origin-id', label.getAttribute('for'));
+				label.removeAttribute('for');
+			});
+			// Strip IDs to avoid duplicates, replace with data-origin-id.
+			clone.querySelectorAll('[id]').forEach(el => {
+				el.setAttribute('data-origin-id', el.id);
+				el.removeAttribute('id');
+			});
+			overlay.appendChild(clone);
+			this.overlaySections.push(clone);
+		});
+
+		// Proxy events from the floating/invisible overlay controls back to the
+		// sidebar master controls. This keeps real HTML interaction while the
+		// StereoGUI mode draws only depth into the stereogram.
+		overlay.addEventListener('input', (e) => this._proxyOverlayControl(e, 'input'));
+		overlay.addEventListener('change', (e) => this._proxyOverlayControl(e, 'change'));
+		overlay.addEventListener('click', (e) => this._proxyOverlayControl(e, 'click'));
+		overlay.addEventListener('wheel', (e) => {
+			if (this.overlayVisible) {
+				e.preventDefault();
+				this._cycleOverlay(e.deltaY > 0 ? 1 : -1);
+			}
+		}, { passive: false });
+
+		window.addEventListener('keydown', (e) => {
+			if (e.key.toLowerCase() === 'g') {
+				this.overlayVisible = !this.overlayVisible;
+				this._updateOverlayVisibility();
+				this.needsRender = true;
+			}
+		});
+
+		this._updateOverlayVisibility();
+	}
+
+	_proxyOverlayControl(e, eventType) {
+		const el = e.target.closest('[data-origin-id]');
+		if (!el) return;
+		const originId = el.getAttribute('data-origin-id');
+		const master = document.getElementById(originId);
+		if (!master) return;
+
+		const tag = el.tagName;
+		const type = (el.type || '').toLowerCase();
+
+		if (eventType === 'click') {
+			if (tag === 'BUTTON' || tag === 'LABEL') {
+				e.preventDefault();
+				master.click();
+				this._syncOverlayControls();
+				this.needsRender = true;
+			}
+			return;
+		}
+
+		if (type === 'checkbox' || type === 'radio') {
+			master.checked = el.checked;
+			master.dispatchEvent(new Event('input', { bubbles: true }));
+			master.dispatchEvent(new Event('change', { bubbles: true }));
+		} else if ('value' in el && 'value' in master) {
+			master.value = el.value;
+			master.dispatchEvent(new Event(eventType, { bubbles: true }));
+			if (eventType === 'input') master.dispatchEvent(new Event('change', { bubbles: true }));
+		}
+		this._syncOverlayControls();
+		this.needsRender = true;
+	}
+
+	_syncOverlayControls() {
+		const overlay = document.getElementById('guiOverlay');
+		if (!overlay) return;
+		overlay.querySelectorAll('[data-origin-id]').forEach(el => {
+			const master = document.getElementById(el.getAttribute('data-origin-id'));
+			if (!master) return;
+			if ((el.type || '').toLowerCase() === 'checkbox' || (el.type || '').toLowerCase() === 'radio') {
+				el.checked = master.checked;
+			} else if ('value' in el && 'value' in master) {
+				el.value = master.value;
+			} else if (el.tagName !== 'LABEL' && !(el instanceof HTMLInputElement) && !(el instanceof HTMLSelectElement) && !(el instanceof HTMLButtonElement)) {
+				el.textContent = master.textContent;
+			}
+			if (master.classList && el.classList) {
+				el.classList.toggle('hidden', master.classList.contains('hidden'));
+			}
+			if (master.getAttribute && master.getAttribute('style') && el.getAttribute('data-origin-id') === 'errFill') {
+				el.setAttribute('style', master.getAttribute('style'));
+			}
+		});
+	}
+
+	_cycleOverlay(dir) {
+		this.overlayIndex = (this.overlayIndex + dir + this.overlaySections.length) % this.overlaySections.length;
+		this._updateOverlayVisibility();
+		this.needsRender = true;
+	}
+
+	_updateOverlayVisibility() {
+		const overlay = document.getElementById('guiOverlay');
+		const stereo = !!document.getElementById('cStereoGUI')?.checked;
+		overlay.classList.toggle('stereo-depth', stereo && this.overlayVisible);
+		this.overlaySections.forEach((sec, i) => {
+			sec.classList.toggle('hidden', !this.overlayVisible || i !== this.overlayIndex);
+		});
+		this._syncOverlayControls();
+	}
+
+	_ensureGuiDepthSize(w, h) {
+		if (this.guiDepthCanvas.width !== w || this.guiDepthCanvas.height !== h) {
+			this.guiDepthCanvas.width = w;
+			this.guiDepthCanvas.height = h;
+			this.guiDepth = new Uint8Array(w * h);
+		} else if (this.guiDepth.length !== w * h) {
+			this.guiDepth = new Uint8Array(w * h);
+		}
+	}
+
+	_gray(v) {
+		v = Math.max(0, Math.min(255, Math.round(v)));
+		return `rgb(${v},${v},${v})`;
+	}
+
+	_roundPath(ctx, x, y, w, h, r) {
+		r = Math.max(0, Math.min(r, w * 0.5, h * 0.5));
+		ctx.beginPath();
+		ctx.moveTo(x + r, y);
+		ctx.arcTo(x + w, y, x + w, y + h, r);
+		ctx.arcTo(x + w, y + h, x, y + h, r);
+		ctx.arcTo(x, y + h, x, y, r);
+		ctx.arcTo(x, y, x + w, y, r);
+		ctx.closePath();
+	}
+
+	_fillRound(ctx, x, y, w, h, r, v) {
+		if (w <= 0 || h <= 0) return;
+		this._roundPath(ctx, x, y, w, h, r);
+		ctx.fillStyle = this._gray(v);
+		ctx.fill();
+	}
+
+	_drawBevel(ctx, x, y, w, h, r, face = 64, high = 110, low = 26, rim = 4) {
+		// True heightmap geometry: no directional lighting or drop shadows.
+		// Concentric rounded-rect slices create a real ramp up to a flat plateau.
+		if (w <= 1 || h <= 1) return;
+		x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
+		const steps = Math.max(1, Math.min(18, Math.round(rim)));
+		const base = Math.max(0, Math.min(255, low));
+		const top = Math.max(base, Math.min(255, high));
+		for (let i = 0; i <= steps; i++) {
+			const t = i / steps;
+			const s = t * t * (3 - 2 * t); // smooth bevel profile
+			const v = base + (top - base) * s;
+			const ix = x + i, iy = y + i, iw = w - i * 2, ih = h - i * 2;
+			if (iw <= 0 || ih <= 0) break;
+			this._fillRound(ctx, ix, iy, iw, ih, Math.max(0, r - i), v);
+		}
+		// Guarantee a broad flat surface instead of a fully rounded pseudo-lit patch.
+		const inset = steps + 1;
+		this._fillRound(ctx, x + inset, y + inset, w - inset * 2, h - inset * 2, Math.max(0, r - inset), top);
+	}
+
+	_drawInset(ctx, x, y, w, h, r, surface = 90, bottom = 28, rim = 4) {
+		// Opposite of _drawBevel: a carved/recessed trough with sloped walls.
+		if (w <= 1 || h <= 1) return;
+		const steps = Math.max(1, Math.min(16, Math.round(rim)));
+		for (let i = 0; i <= steps; i++) {
+			const t = i / steps;
+			const s = t * t * (3 - 2 * t);
+			const v = surface + (bottom - surface) * s;
+			const ix = x + i, iy = y + i, iw = w - i * 2, ih = h - i * 2;
+			if (iw <= 0 || ih <= 0) break;
+			this._fillRound(ctx, ix, iy, iw, ih, Math.max(0, r - i), v);
+		}
+		const inset = steps + 1;
+		this._fillRound(ctx, x + inset, y + inset, w - inset * 2, h - inset * 2, Math.max(0, r - inset), bottom);
+	}
+
+	_drawHemisphere(ctx, cx, cy, radius, base = 34, top = 160) {
+		// Radial height gradient = spherical cap height, not a light/shadow gradient.
+		if (radius <= 0) return;
+		const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+		g.addColorStop(0, this._gray(top));
+		g.addColorStop(0.45, this._gray(base + (top - base) * 0.78));
+		g.addColorStop(0.78, this._gray(base + (top - base) * 0.32));
+		g.addColorStop(1, this._gray(base));
+		ctx.save();
+		ctx.beginPath();
+		ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+		ctx.fillStyle = g;
+		ctx.fill();
+		ctx.restore();
+	}
+
+	_drawRaisedText(ctx, text, x, y, maxW, size = 15, surfaceZ = 116, weight = 700, align = 'left') {
+		// Text is simple height contrast, not fake shadowing:
+		// on a high/flat control surface it is cut down to low Z (black),
+		// on a low/background surface it rises bright for readability.
+		text = String(text || '').replace(/\s+/g, ' ').trim();
+		if (!text) return;
+		ctx.save();
+		ctx.font = `${weight} ${size}px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif`;
+		ctx.textAlign = align;
+		ctx.textBaseline = 'middle';
+		ctx.fillStyle = this._gray(surfaceZ >= 82 ? 4 : 172);
+		ctx.fillText(text, x, y, maxW);
+		ctx.restore();
+	}
+
+	_relRect(el, rootRect, sx, sy) {
+		const r = el.getBoundingClientRect();
+		return {
+			x: (r.left - rootRect.left) * sx,
+			y: (r.top - rootRect.top) * sy,
+			w: r.width * sx,
+			h: r.height * sy,
+		};
+	}
+
+	_drawStereoGuiElement(ctx, el, rootRect, sx, sy) {
+		if (el.closest('.hidden') || el.type === 'file') return;
+		const r = this._relRect(el, rootRect, sx, sy);
+		if (r.w <= 0 || r.h <= 0 || r.x > this.canvas.width || r.y > this.canvas.height || r.x + r.w < 0 || r.y + r.h < 0) return;
+
+		const tag = el.tagName;
+		const type = (el.type || '').toLowerCase();
+		if (el.classList.contains('sec-t')) {
+			this._drawBevel(ctx, r.x - 10, r.y - 10, r.w + 20, r.h + 24, 20, 76, 130, 36, 8);
+			this._drawRaisedText(ctx, el.textContent, r.x + 4, r.y + r.h * .55, r.w, Math.max(28, r.h * .72), 130, 800);
+			return;
+		}
+
+		if (tag === 'BUTTON' || tag === 'SELECT') {
+			const pri = el.classList.contains('pri');
+			this._drawBevel(ctx, r.x, r.y, r.w, r.h, Math.max(20, r.h * .24), pri ? 86 : 72, pri ? 150 : 128, 34, Math.max(8, r.h * .11));
+			const text = tag === 'SELECT' ? (el.options?.[el.selectedIndex]?.textContent || el.value) : el.textContent;
+			this._drawRaisedText(ctx, text, r.x + r.h * .28, r.y + r.h * .52, r.w - r.h * .72, Math.min(36, Math.max(24, r.h * .42)), pri ? 150 : 128, 750);
+			if (tag === 'SELECT') {
+				// A small carved arrow well, not a painted glyph.
+				ctx.save();
+				ctx.lineJoin = 'round';
+				ctx.lineWidth = Math.max(5, r.h * .07);
+				ctx.strokeStyle = this._gray(92);
+				ctx.fillStyle = this._gray(52);
+				ctx.beginPath();
+				ctx.moveTo(r.x + r.w - r.h * .62, r.y + r.h * .40);
+				ctx.lineTo(r.x + r.w - r.h * .25, r.y + r.h * .40);
+				ctx.lineTo(r.x + r.w - r.h * .435, r.y + r.h * .64);
+				ctx.closePath();
+				ctx.stroke();
+				ctx.fill();
+				ctx.restore();
+			}
+			return;
+		}
+
+		if (type === 'range') {
+			const pad = Math.max(32, r.h * .58);
+			const x0 = r.x + pad, x1 = r.x + r.w - pad, cy = r.y + r.h * .5;
+			const min = Number(el.min || 0), max = Number(el.max || 100), val = Number(el.value || 0);
+			const t = max > min ? Math.max(0, Math.min(1, (val - min) / (max - min))) : 0;
+			// The slot is a carved trough. The filled portion is a slightly raised shelf inside it.
+			const trackH = Math.max(18, r.h * .28);
+			this._drawInset(ctx, x0, cy - trackH * .5, x1 - x0, trackH, trackH * .5, 82, 24, Math.max(4, trackH * .25));
+			this._fillRound(ctx, x0 + trackH * .42, cy - trackH * .18, Math.max(0, (x1 - x0 - trackH * .84) * t), trackH * .36, trackH * .18, 106);
+			const kx = x0 + (x1 - x0) * t;
+			this._drawHemisphere(ctx, kx, cy, Math.max(28, r.h * .38), 32, 168);
+			return;
+		}
+
+		if (type === 'checkbox') {
+			const size = Math.max(44, Math.min(68, Math.max(r.w, r.h)));
+			const yy = r.y + (r.h - size) * .5;
+			this._drawInset(ctx, r.x, yy, size, size, 7, 88, 24, 4);
+			if (el.checked) {
+				// Raised check ridge inside the recessed socket.
+				ctx.save();
+				ctx.lineWidth = Math.max(8, size * .16);
+				ctx.lineCap = 'round';
+				ctx.lineJoin = 'round';
+				ctx.strokeStyle = this._gray(154);
+				ctx.beginPath();
+				ctx.moveTo(r.x + size * .24, yy + size * .52);
+				ctx.lineTo(r.x + size * .43, yy + size * .70);
+				ctx.lineTo(r.x + size * .80, yy + size * .27);
+				ctx.stroke();
+				ctx.restore();
+			}
+			return;
+		}
+
+		if (tag === 'LABEL') {
+			this._drawRaisedText(ctx, el.textContent, r.x, r.y + r.h * .56, r.w, Math.min(34, Math.max(22, r.h * .68)), 42, 700);
+			return;
+		}
+
+		if (el.classList.contains('err-bar')) {
+			this._drawInset(ctx, r.x, r.y, r.w, Math.max(16, r.h), Math.max(8, r.h * .5), 76, 20, 4);
+			const fill = el.querySelector('.err-fill');
+			const fw = fill ? fill.getBoundingClientRect().width * sx : 0;
+			this._fillRound(ctx, r.x + 6, r.y + 6, Math.max(0, fw - 12), Math.max(6, r.h - 12), 6, 112);
+			return;
+		}
+
+		if (el.classList.contains('err-disp')) {
+			this._drawRaisedText(ctx, el.childNodes[0]?.textContent || 'Constraint Error', r.x, r.y + 18, r.w, 26, 42, 700);
+		}
+	}
+
+	_buildStereoGuiDepth(cfg) {
+		if (!cfg.stereoGUI || !this.overlayVisible || !this.overlaySections?.length) return null;
+		this._updateOverlayVisibility();
+		this._syncOverlayControls();
+
+		const w = this.canvas.width, h = this.canvas.height;
+		this._ensureGuiDepthSize(w, h);
+		const ctx = this.guiDepthCtx;
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.clearRect(0, 0, w, h);
+
+		const active = this.overlaySections[this.overlayIndex];
+		if (!active || active.classList.contains('hidden')) return null;
+
+		const root = this.canvas.getBoundingClientRect();
+		const sx = w / Math.max(1, root.width);
+		const sy = h / Math.max(1, root.height);
+		const rr = this._relRect(active, root, sx, sy);
+
+		// Large sculpted backing plate, then controls, then raised text/details.
+		this._drawBevel(ctx, rr.x, rr.y, rr.w, rr.h, 36, 46, 98, 20, 16);
+		this._fillRound(ctx, rr.x + 24, rr.y + 24, rr.w - 48, rr.h - 48, 26, 38);
+
+		const controls = active.querySelectorAll('.sec-t, .err-bar, .err-disp, button, select, input, label');
+		controls.forEach(el => this._drawStereoGuiElement(ctx, el, root, sx, sy));
+
+		// Raised page indicator dots: useful in stereo mode because the visible DOM is hidden.
+		const dotY = rr.y + rr.h - 20;
+		const total = this.overlaySections.length;
+		const pitch = 24;
+		let dotX = rr.x + rr.w * .5 - ((total - 1) * pitch) * .5;
+		for (let i = 0; i < total; i++) {
+			this._fillRound(ctx, dotX - 6, dotY - 6, 12, 12, 6, i === this.overlayIndex ? 150 : 72);
+			dotX += pitch;
+		}
+
+		const img = ctx.getImageData(0, 0, w, h).data;
+		const out = this.guiDepth;
+		for (let i = 0, j = 0, n = w * h; i < n; i++, j += 4) out[i] = img[j];
+		return out;
+	}
+
+	// Paint one shade stamp + its ghost-cancelling copies
+	_paintShadeStamp(x, y, radius, stepDelta, cfg) {
+		// Main stroke
+		this.depthMap.addShadeDelta(Math.round(x), Math.round(y), radius, stepDelta);
+
+		if (!cfg.ghost) return;
+
+		const period = cfg.basePeriod; // stereo width
+		const copies = cfg.ghostCopies;
+		const W = this.depthMap.w;
+
+		for (let k = 1; k <= copies; k++) {
+			// invert each next copy (alternating sign)
+			const sign = (k % 2 === 1) ? -1 : 1;
+			// both directions (left/right shift by stereo width)
+			for (const dir of [-1, 1]) {
+				const gx = x + dir * period * k;
+				if (gx < -radius || gx > W + radius) continue;
+
+				if (cfg.ghostOpt === 'A') {
+					// Option A: weaken value cumulatively (×0.5..0.7 per copy)
+					const wgt = Math.pow(cfg.ghostA, k);
+					this.depthMap.addShadeDelta(Math.round(gx), Math.round(y), radius, stepDelta * sign * wgt);
+				} else {
+					// Option B: keep same magnitude, drop pixels (remove 50-70% -> keep 30-50%) cumulatively
+					const keep = Math.max(0, 1 - cfg.ghostB);
+					const density = Math.pow(keep, k);
+					this.depthMap.addShadeDelta(Math.round(gx), Math.round(y), radius, stepDelta * sign, density);
+				}
+			}
+		}
+	}
+
+	// Continuous drawing driven by frame delta
+	_drawBrushStroke(dt) {
+		const cfg = this._readConfig();
+		const pressure = cfg.brushPressure;
+		const radius = cfg.brushSize;
+		const shape = cfg.brushShape;
+
+		const dx = this.currX - this.prevX;
+		const dy = this.currY - this.prevY;
+		const dist = Math.hypot(dx, dy);
+		const steps = Math.max(1, Math.ceil(dist / (radius * 0.4)));
+
+		if (cfg.brushType === 'depth') {
+			const speed = 200;
+			const frameDelta = pressure * speed * dt;
+			const stepDelta = frameDelta / steps;
+			for (let i = 0; i < steps; i++) {
+				const t = i / (steps - 1 || 1);
+				const x = this.prevX + dx * t;
+				const y = this.prevY + dy * t;
+				this.gpu.queueBrush(x, y, radius, stepDelta, shape);
+			}
+		} else if (cfg.brushType === 'shade') {
+			const shadeSpeed = 2;
+			const frameDelta = pressure * shadeSpeed * dt;
+			const stepDelta = frameDelta / steps;
+			for (let i = 0; i < steps; i++) {
+				const t = i / (steps - 1 || 1);
+				const x = this.prevX + dx * t;
+				const y = this.prevY + dy * t;
+				this._paintShadeStamp(x, y, radius, stepDelta, cfg);
+			}
+		}
+
+		this.prevX = this.currX;
+		this.prevY = this.currY;
+	}
+
+	_resizeCanvas() {
+		const wrap = document.getElementById('cw');
+		const nw = wrap.clientWidth, nh = wrap.clientHeight;
+		if (nw < 10 || nh < 10) return;
+		this.canvas.width = nw;
+		this.canvas.height = nh;
+		this._ctx_configure();
+		this.depthMap.resize(nw, nh);
+		this.depthMap.generatePreset(document.getElementById('sPreset').value);
+		this.needsRender = true;
+	}
+
+	_ctx_configure() {
+		if (this.gpu._ctx && this.gpu._dev) {
+			this.gpu._ctx.configure({
+				device: this.gpu._dev,
+				format: this.gpu._fmt,
+				alphaMode: 'opaque',
+			});
+		}
+	}
+
+	_render() {
+		const cfg = this._readConfig();
+		cfg.guiDepth = this._buildStereoGuiDepth(cfg);
+		this.gpu.render(this.depthMap, cfg);
+
+		const err = this.gpu.lastError;
+		const el = document.getElementById('errVal');
+		const fill = document.getElementById('errFill');
+		if (err >= 0 && cfg.viewMode === 0) {
+			el.textContent = err.toFixed(2);
+			fill.style.width = Math.min(100, err / 1.28) + '%';
+		} else {
+			el.textContent = cfg.viewMode !== 0 ? '— (view)' : '—';
+			fill.style.width = '0%';
+		}
+	}
+
+	_downloadBlob(blob, filename) {
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url; a.download = filename; a.click();
+		URL.revokeObjectURL(url);
+	}
+
+	async _saveMap(type) {
+		const w = this.depthMap.w, h = this.depthMap.h;
+		const canvas = document.createElement('canvas');
+		canvas.width = w; canvas.height = h;
+		const ctx = canvas.getContext('2d');
+		const imgData = ctx.createImageData(w, h);
+		const data = imgData.data;
+		if (type === 'depth') {
+			const src = this.depthMap.depth;
+			for (let i = 0; i < w * h; i++) {
+				const v = src[i];
+				const idx = i * 4; data[idx] = v; data[idx+1] = v; data[idx+2] = v; data[idx+3] = 255;
+			}
+		} else {
+			const src = this.depthMap.shade;
+			for (let i = 0; i < w * h; i++) {
+				const v = Math.round(src[i] * 127.5);
+				const idx = i * 4; data[idx] = v; data[idx+1] = v; data[idx+2] = v; data[idx+3] = 255;
+			}
+		}
+		ctx.putImageData(imgData, 0, 0);
+		return new Promise(res => {
+			canvas.toBlob(blob => {
+				this._downloadBlob(blob, type === 'depth' ? 'depthmap.webp' : 'shademap.webp');
+				res();
+			}, 'image/webp', 1.0);
+		});
+	}
+
+	async _loadMap(type, file) {
+		const img = new Image();
+		img.src = URL.createObjectURL(file);
+		await img.decode();
+		
+		const tw = this.depthMap.w;
+		const th = this.depthMap.h;
+		
+		const canvas = document.createElement('canvas');
+		canvas.width = tw;
+		canvas.height = th;
+		const ctx = canvas.getContext('2d');
+		
+		// Scale image to fit the current canvas dimensions
+		ctx.drawImage(img, 0, 0, tw, th);
+		
+		const imgData = ctx.getImageData(0, 0, tw, th).data;
+		if (type === 'depth') {
+			for (let i = 0; i < tw * th; i++) this.depthMap.depth[i] = imgData[i * 4];
+		} else {
+			for (let i = 0; i < tw * th; i++) this.depthMap.shade[i] = imgData[i * 4] / 127.5;
+		}
+		this.depthMap.dirty = true;
+		this.needsRender = true;
+		URL.revokeObjectURL(img.src);
+	}
+
+	_loop() {
+		const now = performance.now();
+		const dt = this._lastTime ? Math.min(0.1, (now - this._lastTime) / 1000) : 0.016;
+		this._lastTime = now;
+
+		if (this.drawing) {
+			this._drawBrushStroke(dt);
+			this.needsRender = true;
+		}
+
+		const cfg = this._readConfig();
+		if (cfg.animX || cfg.animRand) {
+			if (cfg.animX) this.animFrame++;
+			if (cfg.animRand) this.animFrame += Math.random() * 10;
+			this.needsRender = true;
+		}
+
+		if (this.needsRender) {
+			this._render();
+			this.needsRender = false;
+		}
+		requestAnimationFrame(() => this._loop());
+	}
+}
+
+new App();
+</script>
+</body>
+</html>
