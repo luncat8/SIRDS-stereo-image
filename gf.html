@@ -830,6 +830,8 @@ void main() {
 		const PATTERN_IDS = { white: PATTERN_WHITE, color: PATTERN_COLOR, simplex3d: PATTERN_SIMPLEX, stripe: PATTERN_STRIPE };
 
 		let animFrame = 0;
+		let noiseMoveX = 0;
+		let noiseMoveY = 0;
 		let isAnimating = true;
 		let currentMode = 'stereo';	// 'stereo' | 'depth'
 		let linksDirty = true;
@@ -1188,11 +1190,19 @@ void main() {
 		function syncPAT() {
 			PAT.type = PATTERN_IDS[patternType.value];
 			PAT.grain = Math.max(1, parseInt(noiseScaleInput.value) || 1);
-			PAT.moveX = animFrame * parseFloat(noiseVxInput.value);
-			PAT.moveY = animFrame * parseFloat(noiseVyInput.value);
+			// Speed is velocity. The offset is advanced by the animation loop, so changing
+			// a slider changes only the next step and never teleports the current frame.
+			PAT.moveX = noiseMoveX;
+			PAT.moveY = noiseMoveY;
 			const stable = stableNoiseToggle.checked;
 			PAT.timeZ = stable ? 0 : animFrame * 0.045;
 			PAT.frame = stable ? 0 : animFrame;
+		}
+
+		function advanceNoise() {
+			noiseMoveX += parseFloat(noiseVxInput.value) || 0;
+			noiseMoveY += parseFloat(noiseVyInput.value) || 0;
+			animFrame++;
 		}
 
 		// --- render ---
@@ -1422,7 +1432,7 @@ void main() {
 				if (sample >= 0) noteFrameMs(sample);
 			}
 			if (!isAnimating || currentMode !== 'stereo' || animationIsStatic()) return;
-			animFrame++;
+			advanceNoise();
 			renderSirds();
 		}
 

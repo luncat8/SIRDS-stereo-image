@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>SIRDS Heightmap Painter</title>
+	<style>
+		:root {
+			--bg: #101114;
+			--panel: #181a1f;
+			--panel-2: #20232a;
+			--line: #30343d;
+			--text: #edf0f5;
+			--muted: #9aa3b2;
+			--accent: #6d7cff;
+			--accent-hover: #8490ff;
+		}
+
+		* { box-sizing: border-box; }
+		html, body { height: 100%; }
+		body {
+			margin: 0;
+			background: var(--bg);
+			color: var(--text);
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+			overflow: hidden;
+		}
+		button, input, select { font: inherit; }
+		button, select { color: var(--text); }
+		button {
+			border: 1px solid var(--line);
+			border-radius: 6px;
+			background: var(--panel-2);
+			padding: 8px 10px;
+			cursor: pointer;
+		}
+		button:hover { border-color: var(--accent); background: #292d38; }
+		button.active { border-color: var(--accent); background: #505de0; color: #fff; }
+		select {
+			width: 100%;
+			border: 1px solid var(--line);
+			border-radius: 6px;
+			background: var(--panel-2);
+			padding: 8px;
+		}
+		input[type=range] { width: 100%; accent-color: var(--accent); }
+		input[type=checkbox] { accent-color: var(--accent); }
+
+		.app {
+			display: flex;
+			height: 100%;
+			min-height: 0;
+		}
+		.workspace {
+			position: relative;
+			flex: 1;
+			min-width: 0;
+			min-height: 0;
+			background: #0c0d10;
+		}
+		.canvas-frame {
+			position: absolute;
+			inset: 16px;
+			overflow: hidden;
+			border: 1px solid var(--line);
+			border-radius: 10px;
+			background: #050608;
+			box-shadow: 0 12px 40px rgba(0,0,0,.35);
+		}
+		#display, #cursor {
+			position: absolute;
+			inset: 0;
+			display: block;
+			width: 100%;
+			height: 100%;
+		}
+		#cursor { touch-action: none; cursor: crosshair; }
+		.title-card {
+			position: absolute;
+			top: 28px;
+			left: 28px;
+			padding: 9px 12px;
+			border: 1px solid rgba(255,255,255,.12);
+			border-radius: 7px;
+			background: rgba(0,0,0,.58);
+			backdrop-filter: blur(5px);
+			pointer-events: none;
+		}
+		.title-card strong { display: block; font-size: .82rem; }
+		.title-card span { color: var(--muted); font-size: .72rem; }
+		.canvas-actions {
+			position: absolute;
+			right: 28px;
+			bottom: 28px;
+			display: flex;
+			gap: 8px;
+		}
+		.sidebar {
+			width: 310px;
+			flex: 0 0 310px;
+			padding: 14px;
+			overflow-y: auto;
+			background: var(--panel);
+			border-left: 1px solid var(--line);
+		}
+		.sidebar h1 { margin: 0 0 3px; font-size: 1rem; }
+		.sidebar .intro { margin: 0 0 14px; color: var(--muted); font-size: .74rem; line-height: 1.35; }
+		.group {
+			margin-bottom: 10px;
+			padding: 11px;
+			border: 1px solid var(--line);
+			border-radius: 8px;
+			background: rgba(255,255,255,.018);
+		}
+		.group-title {
+			margin-bottom: 8px;
+			color: #b6beff;
+			font-size: .69rem;
+			font-weight: 700;
+			letter-spacing: .08em;
+			text-transform: uppercase;
+		}
+		.tool-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+		.tool-grid button { padding: 7px 3px; font-size: .7rem; }
+		.control { margin-top: 8px; }
+		.control:first-of-type { margin-top: 0; }
+		.control-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; font-size: .74rem; }
+		.control-head span:last-child { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+		.check-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 7px; font-size: .74rem; }
+		.check-row label { color: #cbd1dc; }
+		.palette { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+		.palette button { overflow: hidden; padding: 0; font-size: .66rem; }
+		.palette i { display: block; height: 18px; }
+		.palette span { display: block; padding: 4px 2px; }
+		.button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+		.button-row button { font-size: .72rem; }
+		.status { margin-top: 12px; color: var(--muted); font-size: .68rem; line-height: 1.4; }
+
+		@media (max-width: 760px) {
+			body { overflow: auto; }
+			.app { height: auto; min-height: 100%; flex-direction: column; }
+			.workspace { height: 62vh; min-height: 360px; flex: none; }
+			.sidebar { width: 100%; flex: none; border-top: 1px solid var(--line); border-left: 0; }
+		}
+	</style>
+</head>
+<body>
+	<div class="app">
+		<main class="workspace">
+			<div class="canvas-frame" id="canvasFrame">
+				<canvas id="display"></canvas>
+				<canvas id="cursor"></canvas>
+			</div>
+			<div class="title-card">
+				<strong>Heightmap Painter</strong>
+				<span>paint depth and shade with live noise relief</span>
+			</div>
+			<div class="canvas-actions">
+				<button id="btnExport">Export PNG</button>
+				<button id="btnTerrain">New Terrain</button>
+			</div>
+		</main>
+
+		<aside class="sidebar">
+			<h1>SIRDS Heightmap Painter</h1>
+			<p class="intro">A small, file-friendly canvas tool for making depth maps. Paint with the selected tool, then tune the animated surface noise and light.</p>
+
+			<section class="group">
+				<div class="group-title">Tool</div>
+				<div class="tool-grid">
+					<button class="active" data-mode="depth-add">Add</button>
+					<button data-mode="depth-sub">Sub</button>
+					<button data-mode="depth-noise">Noise</button>
+					<button data-mode="shade">Shade</button>
+				</div>
+				<button id="btnErase" style="width:100%; margin-top:6px; font-size:.72rem">Eraser: Off</button>
+			</section>
+
+			<section class="group">
+				<div class="group-title">Brush</div>
+				<div class="control">
+					<div class="control-head"><label for="brushRadius">Radius</label><span id="brushRadiusValue">28 px</span></div>
+					<input type="range" id="brushRadius" min="2" max="120" step="1" value="28">
+				</div>
+				<div class="control">
+					<div class="control-head"><label for="brushStrength">Strength</label><span id="brushStrengthValue">0.50</span></div>
+					<input type="range" id="brushStrength" min="0" max="1" step="0.01" value="0.50">
+				</div>
+				<div class="control">
+					<div class="control-head"><label for="brushFalloff">Falloff</label><span id="brushFalloffValue">0.60</span></div>
+					<input type="range" id="brushFalloff" min="0.05" max="1" step="0.01" value="0.60">
+				</div>
+				<div class="control" id="noiseBrushControls">
+					<div class="control-head"><label for="brushNoiseScale">Noise scale</label><span id="brushNoiseScaleValue">0.040</span></div>
+					<input type="range" id="brushNoiseScale" min="0.005" max="0.2" step="0.001" value="0.040">
+					<div class="control-head"><label for="brushNoiseAmount">Noise amount</label><span id="brushNoiseAmountValue">1.00</span></div>
+					<input type="range" id="brushNoiseAmount" min="0" max="2" step="0.01" value="1">
+				</div>
+				<div class="control" id="shadeControls" hidden>
+					<div class="control-head"><label for="shadeAzimuth">Shade direction</label><span id="shadeAzimuthValue">135°</span></div>
+					<input type="range" id="shadeAzimuth" min="0" max="360" step="1" value="135">
+					<div class="control-head"><label for="shadeIntensity">Shade intensity</label><span id="shadeIntensityValue">1.00</span></div>
+					<input type="range" id="shadeIntensity" min="0" max="2" step="0.01" value="1">
+				</div>
+			</section>
+
+			<section class="group">
+				<div class="group-title">Noise displacement</div>
+				<div class="check-row"><label for="noiseEnabled">Enabled</label><input type="checkbox" id="noiseEnabled" checked></div>
+				<div class="control">
+					<div class="control-head"><label for="noiseScale">Scale</label><span id="noiseScaleValue">0.025</span></div>
+					<input type="range" id="noiseScale" min="0.005" max="0.12" step="0.001" value="0.025">
+				</div>
+				<div class="control">
+					<div class="control-head"><label for="noiseAmount">Amount</label><span id="noiseAmountValue">0.35</span></div>
+					<input type="range" id="noiseAmount" min="0" max="1" step="0.01" value="0.35">
+				</div>
+				<div class="control">
+					<div class="control-head"><label for="noiseSpeedX">Speed X</label><span id="noiseSpeedXValue">0.60</span></div>
+					<input type="range" id="noiseSpeedX" min="-3" max="3" step="0.05" value="0.60">
+				</div>
+				<div class="control">
+					<div class="control-head"><label for="noiseSpeedY">Speed Y</label><span id="noiseSpeedYValue">0.40</span></div>
+					<input type="range" id="noiseSpeedY" min="-3" max="3" step="0.05" value="0.40">
+				</div>
+				<div class="check-row"><label for="noiseRandom">Random each frame</label><input type="checkbox" id="noiseRandom"></div>
+			</section>
+
+			<section class="group">
+				<div class="group-title">Light</div>
+				<div class="control">
+					<div class="control-head"><label for="lightAzimuth">Azimuth</label><span id="lightAzimuthValue">135°</span></div>
+					<input type="range" id="lightAzimuth" min="0" max="360" step="1" value="135">
+				</div>
+				<div class="control">
+					<div class="control-head"><label for="lightElevation">Elevation</label><span id="lightElevationValue">45°</span></div>
+					<input type="range" id="lightElevation" min="0" max="90" step="1" value="45">
+				</div>
+				<div class="control">
+					<div class="control-head"><label for="ambient">Ambient</label><span id="ambientValue">0.25</span></div>
+					<input type="range" id="ambient" min="0" max="1" step="0.01" value="0.25">
+				</div>
+				<div class="control">
+					<div class="control-head"><label for="specular">Specular</label><span id="specularValue">0.15</span></div>
+					<input type="range" id="specular" min="0" max="1" step="0.01" value="0.15">
+				</div>
+				<div class="control">
+					<div class="control-head"><label for="tilt">Tilt / AO</label><span id="tiltValue">0.35</span></div>
+					<input type="range" id="tilt" min="0" max="1.2" step="0.01" value="0.35">
+				</div>
+			</section>
+
+			<section class="group">
+				<div class="group-title">Palette</div>
+				<div class="palette" id="palette"></div>
+			</section>
+
+			<section class="group">
+				<div class="button-row">
+					<button id="btnClearDepth">Clear depth</button>
+					<button id="btnClearShade">Clear shade</button>
+				</div>
+			</section>
+			<div class="status" id="status">Starting canvas…</div>
+		</aside>
+	</div>
+
+	<script>
+		// Deterministic value noise keeps a painted map stable while the surface moves.
+		const Noise = (() => {
+			const perm = new Uint8Array(512);
+			const source = new Uint8Array(256);
+			let state = 1337;
+			for (let i = 0; i < 256; i++) source[i] = i;
+			for (let i = 255; i > 0; i--) {
+				state = (state * 16807 + 7) & 0x7fffffff;
+				const j = state % (i + 1);
+				const tmp = source[i]; source[i] = source[j]; source[j] = tmp;
+			}
+			for (let i = 0; i < 512; i++) perm[i] = source[i & 255];
+
+			function fade(v) { return v * v * v * (v * (v * 6 - 15) + 10); }
+			function lerp(a, b, t) { return a + (b - a) * t; }
+			function grad(hash, x, y) {
+				switch (hash & 7) {
+					case 0: return x + y;
+					case 1: return -x + y;
+					case 2: return x - y;
+					case 3: return -x - y;
+					case 4: return x;
+					case 5: return -x;
+					case 6: return y;
+					default: return -y;
+				}
+			}
+			function sample(x, y) {
+				const ix0 = Math.floor(x), iy0 = Math.floor(y);
+				const ix = ix0 & 255, iy = iy0 & 255;
+				const fx = x - ix0, fy = y - iy0;
+				const u = fade(fx), v = fade(fy);
+				const aa = perm[perm[ix] + iy];
+				const ab = perm[perm[ix] + iy + 1];
+				const ba = perm[perm[ix + 1] + iy];
+				const bb = perm[perm[ix + 1] + iy + 1];
+				return lerp(
+					lerp(grad(aa, fx, fy), grad(ba, fx - 1, fy), u),
+					lerp(grad(ab, fx, fy - 1), grad(bb, fx - 1, fy - 1), u), v
+				);
+			}
+			function hash(x, y, frame) {
+				let h = Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263);
+				h = Math.imul(h ^ (h >>> 13), 1274126177) + Math.imul(frame | 0, 1442695041);
+				return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+			}
+			function fill(out, w, h, scale, offsetX, offsetY) {
+				let p = 0;
+				for (let y = 0; y < h; y++) {
+					const yy = y * scale + offsetY;
+					for (let x = 0; x < w; x++) out[p++] = sample(x * scale + offsetX, yy);
+				}
+			}
+			return { sample, hash, fill };
+		})();
+
+		class FalloffTable {
+			constructor(size) {
+				this.size = size;
+				this.data = new Float32Array(size * size);
+				this.rebuild(.6);
+			}
+			rebuild(falloff) {
+				const r = this.size * .5;
+				const sigma = .25 + (1 - falloff) * .6;
+				const inv = 1 / (2 * sigma * sigma);
+				let i = 0;
+				for (let y = 0; y < this.size; y++) {
+					const dy = (y - r) / r;
+					for (let x = 0; x < this.size; x++) {
+						const dx = (x - r) / r;
+						const d2 = dx * dx + dy * dy;
+						this.data[i++] = d2 > 1 ? 0 : Math.exp(-d2 * inv);
+					}
+				}
+			}
+			sample(x, y) {
+				const ix = Math.max(0, Math.min(this.size - 1, (x * this.size) | 0));
+				const iy = Math.max(0, Math.min(this.size - 1, (y * this.size) | 0));
+				return this.data[iy * this.size + ix];
+			}
+		}
+
+		class HeightMap {
+			constructor(w, h) {
+				this.w = w;
+				this.h = h;
+				this.depth = new Float32Array(w * h);
+				this.shade = new Float32Array(w * h);
+				this.scratch = new Float32Array(w * h);
+			}
+			resize(w, h) {
+				if (w === this.w && h === this.h) return false;
+				this.w = w; this.h = h;
+				this.depth = new Float32Array(w * h);
+				this.shade = new Float32Array(w * h);
+				this.scratch = new Float32Array(w * h);
+				return true;
+			}
+			clearDepth() { this.depth.fill(0); }
+			clearShade() { this.shade.fill(0); }
+			normalize() {
+				let lo = Infinity, hi = -Infinity;
+				const d = this.depth;
+				for (let i = 0; i < d.length; i++) { if (d[i] < lo) lo = d[i]; if (d[i] > hi) hi = d[i]; }
+				const inv = 1 / (hi - lo || 1);
+				for (let i = 0; i < d.length; i++) d[i] = (d[i] - lo) * inv;
+			}
+			stamp(table, p, cx, cy, eraser) {
+				const r = Math.max(1, p.radius);
+				const x0 = Math.max(0, Math.floor(cx - r));
+				const y0 = Math.max(0, Math.floor(cy - r));
+				const x1 = Math.min(this.w - 1, Math.ceil(cx + r));
+				const y1 = Math.min(this.h - 1, Math.ceil(cy + r));
+				const invR = 1 / r;
+				const sign = eraser || p.mode === 'depth-sub' ? -1 : 1;
+				for (let y = y0; y <= y1; y++) {
+					const dy = (y - cy) * invR;
+					const row = y * this.w;
+					for (let x = x0; x <= x1; x++) {
+						const dx = (x - cx) * invR;
+						if (dx * dx + dy * dy > 1) continue;
+						const f = table.sample((x - cx + r) / (2 * r), (y - cy + r) / (2 * r));
+						if (f <= 0) continue;
+						const i = row + x;
+						if (p.mode === 'shade') {
+							const az = p.shadeAzimuth * Math.PI / 180;
+							const directional = .5 + (dx * Math.cos(az) + dy * Math.sin(az)) * .5;
+							const shade = Noise.hash(x, y, 17) * .65 + directional * .35;
+							const a = shade * p.shadeIntensity * p.strength * f;
+							this.shade[i] = Math.max(0, Math.min(1, this.shade[i] + (eraser ? -a : a)));
+						} else if (p.mode === 'depth-noise') {
+							const n = Noise.sample(x * p.noiseScale, y * p.noiseScale);
+							const delta = p.strength * .08 * f * p.noiseAmount * n;
+							this.depth[i] = Math.max(0, Math.min(1, this.depth[i] + (eraser ? -Math.abs(delta) : delta)));
+						} else {
+							this.depth[i] = Math.max(0, Math.min(1, this.depth[i] + sign * p.strength * .08 * f));
+						}
+					}
+				}
+			}
+			blurShade() {
+				const w = this.w, h = this.h, src = this.shade, dst = this.scratch;
+				for (let y = 0; y < h; y++) {
+					const ym = y ? y - 1 : 0, yp = y + 1 < h ? y + 1 : h - 1;
+					for (let x = 0; x < w; x++) {
+						const xm = x ? x - 1 : 0, xp = x + 1 < w ? x + 1 : w - 1;
+						dst[y * w + x] = (src[ym * w + xm] + src[ym * w + x] + src[ym * w + xp] + src[y * w + xm] + src[y * w + x] + src[y * w + xp] + src[yp * w + xm] + src[yp * w + x] + src[yp * w + xp]) / 9;
+					}
+				}
+				src.set(dst);
+			}
+		}
+
+		class Renderer {
+			constructor(w, h) {
+				this.canvas = document.createElement('canvas');
+				this.ctx = this.canvas.getContext('2d', { alpha: false });
+				this.resize(w, h);
+			}
+			resize(w, h) {
+				this.w = w; this.h = h;
+				this.canvas.width = w; this.canvas.height = h;
+				this.image = this.ctx.createImageData(w, h);
+				this.out = this.image.data;
+			}
+			render(hm, time, frame, o) {
+				const w = this.w, h = this.h, depth = hm.depth, shade = hm.shade, out = this.out;
+				const az = o.lightAzimuth * Math.PI / 180, el = o.lightElevation * Math.PI / 180;
+				const lx = Math.cos(el) * Math.cos(az), ly = Math.cos(el) * Math.sin(az), lz = Math.sin(el);
+				const ox = o.noiseOffsetX;
+				const oy = o.noiseOffsetY;
+				const useHash = o.noiseRandomEachFrame;
+				const base = o.palette.base, dark = o.palette.dark, hi = o.palette.highlight;
+				const aoStrength = Math.sin(o.tilt) * .5;
+				let p = 0;
+				for (let y = 0; y < h; y++) {
+					const ym = y ? y - 1 : 0, yp = y + 1 < h ? y + 1 : h - 1;
+					for (let x = 0; x < w; x++) {
+						const xm = x ? x - 1 : 0, xp = x + 1 < w ? x + 1 : w - 1;
+						let dx = (depth[y * w + xp] - depth[y * w + xm]) * 4;
+						let dy = (depth[yp * w + x] - depth[ym * w + x]) * 4;
+						const n = o.noiseEnabled ? (useHash ? Noise.hash(x, y, frame) * 2 - 1 : Noise.sample(x * o.noiseScale + ox, y * o.noiseScale + oy)) : 0;
+						dx += n * o.noiseAmount * 2;
+						dy += n * o.noiseAmount * 2;
+						const nx = -dx, ny = -dy, nz = 1;
+						const inv = 1 / Math.sqrt(nx * nx + ny * ny + 1);
+						const nxn = nx * inv, nyn = ny * inv, nzn = inv;
+						const diffuse = Math.max(0, nxn * lx + nyn * ly + nzn * lz);
+						const slope = 1 - nzn;
+						const lum = Math.max(0, o.ambient + diffuse * (1 - o.ambient) - aoStrength * slope * .4);
+						const halfX = lx, halfY = ly, halfZ = lz + 1;
+						const halfInv = 1 / Math.sqrt(halfX * halfX + halfY * halfY + halfZ * halfZ);
+						const spec = Math.pow(Math.max(0, nxn * halfX * halfInv + nyn * halfY * halfInv + nzn * halfZ * halfInv), 32) * o.specular;
+						const t = lum < .5 ? lum * 2 : (lum - .5) * 2;
+						const c0 = lum < .5 ? dark : base, c1 = lum < .5 ? base : hi;
+						const shadeAmount = shade[y * w + x] * o.shadeStrength;
+						out[p++] = Math.min(255, c0[0] * (1 - t) + c1[0] * t) * (1 - shadeAmount) + 255 * spec;
+						out[p++] = Math.min(255, c0[1] * (1 - t) + c1[1] * t) * (1 - shadeAmount) + 255 * spec;
+						out[p++] = Math.min(255, c0[2] * (1 - t) + c1[2] * t) * (1 - shadeAmount) + 255 * spec;
+						out[p++] = 255;
+					}
+				}
+				this.ctx.putImageData(this.image, 0, 0);
+			}
+		}
+
+		class App {
+			constructor() {
+				this.display = document.getElementById('display');
+				this.cursor = document.getElementById('cursor');
+				this.displayCtx = this.display.getContext('2d', { alpha: false });
+				this.cursorCtx = this.cursor.getContext('2d');
+				this.frame = 0;
+				this.start = performance.now();
+				this.last = null;
+				this.drawing = false;
+				this.erasing = false;
+				this.lastX = 0; this.lastY = 0;
+				this.pointerX = 0; this.pointerY = 0;
+				this.needsRender = true;
+				this.hm = new HeightMap(1, 1);
+				this.falloff = new FalloffTable(96);
+				this.renderer = new Renderer(1, 1);
+				this.brush = { radius: 28, strength: .5, mode: 'depth-add', noiseScale: .04, noiseAmount: 1, shadeAzimuth: 135, shadeIntensity: 1 };
+				this.frameCallback = () => this._loop();
+				this.opts = {
+					noiseEnabled: true, noiseScale: .025, noiseAmount: .35,
+					noiseSpeedX: .6, noiseSpeedY: .4, noiseOffsetX: 0, noiseOffsetY: 0, noiseRandomEachFrame: false,
+					lightAzimuth: 135, lightElevation: 45, ambient: .25, specular: .15, tilt: .35,
+					shadeStrength: 1, palette: { base: [154, 160, 166], dark: [43, 45, 49], highlight: [230, 231, 234] }
+				};
+				this._bindControls();
+				this._bindPointer();
+				this._resize();
+				new ResizeObserver(() => this._resize()).observe(document.getElementById('canvasFrame'));
+				this._loop();
+			}
+
+			_resize() {
+				const box = document.getElementById('canvasFrame');
+				const rect = box.getBoundingClientRect();
+				if (rect.width < 2 || rect.height < 2) return;
+				const dpr = Math.min(1.25, window.devicePixelRatio || 1);
+				const maxPixels = 700 * 480;
+				const scale = Math.min(dpr, Math.sqrt(maxPixels / Math.max(1, rect.width * rect.height)));
+				const w = Math.max(64, Math.floor(rect.width * scale));
+				const h = Math.max(64, Math.floor(rect.height * scale));
+				if (this.display.width === w && this.display.height === h) return;
+				this.display.width = w; this.display.height = h;
+				this.cursor.width = w; this.cursor.height = h;
+				this.hm.resize(w, h);
+				this.renderer.resize(w, h);
+				Noise.fill(this.hm.depth, w, h, .025, 0, 0);
+				this.hm.normalize();
+				this.needsRender = true;
+				this._setStatus(w + ' × ' + h + ' · drag to paint');
+			}
+
+			_configFromInput() {
+				const b = this.brush;
+				b.radius = +document.getElementById('brushRadius').value;
+				b.strength = +document.getElementById('brushStrength').value;
+				b.mode = this.mode;
+				b.noiseScale = +document.getElementById('brushNoiseScale').value;
+				b.noiseAmount = +document.getElementById('brushNoiseAmount').value;
+				b.shadeAzimuth = +document.getElementById('shadeAzimuth').value;
+				b.shadeIntensity = +document.getElementById('shadeIntensity').value;
+				return b;
+			}
+
+			_stamp(x, y) { this.hm.stamp(this.falloff, this._configFromInput(), x, y, this.erasing); this.needsRender = true; }
+			_stampSegment(x0, y0, x1, y1) {
+				const dx = x1 - x0, dy = y1 - y0, dist = Math.hypot(dx, dy);
+				const step = Math.max(1, (+document.getElementById('brushRadius').value) * .25);
+				const count = Math.max(1, Math.ceil(dist / step));
+				for (let i = 1; i <= count; i++) this._stamp(x0 + dx * i / count, y0 + dy * i / count);
+			}
+
+			_toMap(clientX, clientY) {
+				const rect = this.cursor.getBoundingClientRect();
+				return { x: (clientX - rect.left) * this.hm.w / rect.width, y: (clientY - rect.top) * this.hm.h / rect.height };
+			}
+			_drawCursor(x, y, visible) {
+				const ctx = this.cursorCtx, w = this.cursor.width, h = this.cursor.height;
+				ctx.clearRect(0, 0, w, h);
+				if (!visible) return;
+				const rect = this.cursor.getBoundingClientRect();
+				const scale = w / Math.max(1, rect.width);
+				const r = (+document.getElementById('brushRadius').value) * scale;
+				const px = x * w / this.hm.w, py = y * h / this.hm.h;
+				ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2);
+				ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.stroke();
+				ctx.beginPath(); ctx.arc(px, py, r - 1, 0, Math.PI * 2);
+				ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.stroke();
+			}
+
+			_bindPointer() {
+				const cv = this.cursor;
+				cv.addEventListener('pointerdown', e => {
+					if (e.button !== 0) return;
+					cv.setPointerCapture(e.pointerId);
+					const p = this._toMap(e.clientX, e.clientY);
+					this.drawing = true; this.lastX = p.x; this.lastY = p.y;
+					this._stamp(p.x, p.y); this._drawCursor(p.x, p.y, true); e.preventDefault();
+				});
+				cv.addEventListener('pointermove', e => {
+					const p = this._toMap(e.clientX, e.clientY);
+					if (this.drawing) this._stampSegment(this.lastX, this.lastY, p.x, p.y);
+					this.lastX = p.x; this.lastY = p.y; this._drawCursor(p.x, p.y, true);
+				});
+				const stop = e => { if (!this.drawing) return; this.drawing = false; if (this.mode === 'shade') this.hm.blurShade(); if (cv.hasPointerCapture(e.pointerId)) cv.releasePointerCapture(e.pointerId); this.needsRender = true; };
+				cv.addEventListener('pointerup', stop);
+				cv.addEventListener('pointercancel', stop);
+				cv.addEventListener('pointerleave', () => { if (!this.drawing) this._drawCursor(0, 0, false); });
+			}
+
+			_bindControls() {
+				this.mode = 'depth-add';
+				document.querySelectorAll('[data-mode]').forEach(btn => btn.addEventListener('click', () => {
+					this.mode = btn.dataset.mode;
+					document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b === btn));
+					document.getElementById('noiseBrushControls').hidden = this.mode !== 'depth-noise';
+					document.getElementById('shadeControls').hidden = this.mode !== 'shade';
+				}));
+				document.getElementById('btnErase').addEventListener('click', e => { this.erasing = !this.erasing; e.currentTarget.textContent = 'Eraser: ' + (this.erasing ? 'On' : 'Off'); e.currentTarget.classList.toggle('active', this.erasing); });
+
+				const controls = [
+					['brushRadius', 'radius', v => v + ' px'], ['brushStrength', 'strength', v => (+v).toFixed(2)],
+					['brushFalloff', 'falloff', v => (+v).toFixed(2)], ['brushNoiseScale', 'noiseScaleBrush', v => (+v).toFixed(3)],
+					['brushNoiseAmount', 'noiseAmountBrush', v => (+v).toFixed(2)], ['shadeAzimuth', 'shadeAzimuth', v => v + '°'],
+					['shadeIntensity', 'shadeIntensity', v => (+v).toFixed(2)], ['noiseScale', 'noiseScale', v => (+v).toFixed(3)],
+					['noiseAmount', 'noiseAmount', v => (+v).toFixed(2)], ['noiseSpeedX', 'noiseSpeedX', v => (+v).toFixed(2)],
+					['noiseSpeedY', 'noiseSpeedY', v => (+v).toFixed(2)], ['lightAzimuth', 'lightAzimuth', v => v + '°'],
+					['lightElevation', 'lightElevation', v => v + '°'], ['ambient', 'ambient', v => (+v).toFixed(2)],
+					['specular', 'specular', v => (+v).toFixed(2)], ['tilt', 'tilt', v => (+v).toFixed(2)]
+				];
+				controls.forEach(item => {
+					const input = document.getElementById(item[0]), output = document.getElementById(item[0] + 'Value');
+					input.addEventListener('input', () => { output.textContent = item[2](input.value); this._updateOption(item[1], +input.value); this.needsRender = true; });
+				});
+				document.getElementById('brushFalloff').addEventListener('input', e => this.falloff.rebuild(+e.target.value));
+				document.getElementById('noiseEnabled').addEventListener('change', e => { this.opts.noiseEnabled = e.target.checked; this.needsRender = true; });
+				document.getElementById('noiseRandom').addEventListener('change', e => { this.opts.noiseRandomEachFrame = e.target.checked; this.needsRender = true; });
+				document.getElementById('btnClearDepth').addEventListener('click', () => { this.hm.clearDepth(); this.needsRender = true; });
+				document.getElementById('btnClearShade').addEventListener('click', () => { this.hm.clearShade(); this.needsRender = true; });
+				document.getElementById('btnTerrain').addEventListener('click', () => { Noise.fill(this.hm.depth, this.hm.w, this.hm.h, .025, Math.random() * 40, Math.random() * 40); this.hm.normalize(); this.needsRender = true; });
+				document.getElementById('btnExport').addEventListener('click', () => { const a = document.createElement('a'); a.download = 'sirds-heightmap.png'; a.href = this.renderer.canvas.toDataURL('image/png'); a.click(); });
+				this._buildPalette();
+			}
+
+			_updateOption(name, value) {
+				if (name === 'radius' || name === 'strength' || name === 'noiseScaleBrush' || name === 'noiseAmountBrush') return;
+				this.opts[name] = value;
+			}
+			_buildPalette() {
+				const palettes = [
+					['Stone', [154,160,166], [43,45,49], [230,231,234]], ['Sand', [214,178,122], [91,62,29], [253,232,184]],
+					['Moss', [79,122,62], [16,38,16], [185,224,138]], ['Lava', [179,51,26], [23,6,4], [255,210,112]],
+					['Ice', [168,216,230], [30,56,69], [255,255,255]], ['Plasma', [122,63,179], [22,7,40], [255,142,229]]
+				];
+				const root = document.getElementById('palette');
+				palettes.forEach(p => {
+					const b = document.createElement('button');
+					const swatch = document.createElement('i'), name = document.createElement('span');
+					swatch.style.background = 'linear-gradient(90deg, rgb(' + p[2] + '), rgb(' + p[1] + '), rgb(' + p[0] + '))'; name.textContent = p[0];
+					b.appendChild(swatch); b.appendChild(name); b.addEventListener('click', () => { this.opts.palette = { base: p[1], dark: p[2], highlight: p[3] }; this.needsRender = true; }); root.appendChild(b);
+				});
+			}
+			_setStatus(text) { document.getElementById('status').textContent = text; }
+			_loop() {
+				const now = performance.now();
+				const time = (now - this.start) / 1000;
+				const dt = this.last === null ? 0 : Math.min(.1, (now - this.last) / 1000);
+				this.last = now;
+				if (this.opts.noiseEnabled) {
+					// Keep position separate from velocity so speed edits never jump the surface.
+					this.opts.noiseOffsetX += this.opts.noiseSpeedX * dt;
+					this.opts.noiseOffsetY += this.opts.noiseSpeedY * dt;
+					this.frame++;
+				}
+				if (this.needsRender || this.opts.noiseEnabled) {
+					this.renderer.render(this.hm, time, this.frame, this.opts);
+					this.displayCtx.clearRect(0, 0, this.display.width, this.display.height);
+					this.displayCtx.drawImage(this.renderer.canvas, 0, 0);
+					this.needsRender = false;
+				}
+				requestAnimationFrame(this.frameCallback);
+			}
+		}
+
+		new App();
+	</script>
+</body>
+</html>

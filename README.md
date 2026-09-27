@@ -7,6 +7,7 @@
 - fast webGPU
 - vanilla js, single HTML
 - `gf.html` — lightweight animated SIRDS, WebGL2 gather with CPU fallback
+- `noise.html` — file-friendly heightmap painter with brush tools, animated relief noise, and lighting
 
 ##
 

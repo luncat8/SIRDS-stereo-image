@@ -211,6 +211,17 @@ const movingCount = ctx.putCount;
 for (let i = 0; i < 5; i++) runFrame();
 check('drifting noise redraws every frame', ctx.putCount === movingCount + 5, ctx.putCount - movingCount + ' frames');
 
+// Changing velocity must not reinterpret the current position as frame zero.
+const beforeSpeedChange = new Uint32Array(ctx.el.lastImage.data.buffer).slice();
+byId.noiseVx.value = '2';
+byId.noiseVx.fire('input');
+const afterSpeedChange = new Uint32Array(ctx.el.lastImage.data.buffer);
+let continuous = true;
+for (let i = 0; i < beforeSpeedChange.length; i++) {
+	if (beforeSpeedChange[i] !== afterSpeedChange[i]) { continuous = false; break; }
+}
+check('speed slider keeps the current noise position', continuous);
+
 const ruBtn = [...byId.langBar.children].find(b => b.dataset.code === 'ru');
 ruBtn.fire('click');
 const backendLbl = i18nEls.find(el => el.dataset.i18n === 'lblBackend');
